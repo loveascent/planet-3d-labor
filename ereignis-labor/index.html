@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ereignis-Labor</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Aufbau: Bild oben, Statuszeile, Bedienung darunter; ab 900 px Bedienung als Spalte rechts. Bewusst nur dunkel (Weltraum). */
+  :root { color-scheme: dark; --bg: #0b0d12; --fl: #151923; --ra: #2a3040; --tx: #e8eaf0; --t2: #9aa3b5; --ak: #ffb454; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--tx); font: 14px/1.4 system-ui, sans-serif; }
+  #bild { display: block; width: 100%; height: 62vh; touch-action: none; background: #000; }
+  #status { padding-block: 6px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); color: var(--t2); font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--ra); }
+  #bedienung { padding-block: 12px 32px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 760px; margin: 0 auto; display: grid; gap: 10px; }
+  .reihe { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { flex: 1 1 auto; min-height: 42px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--ra); background: var(--fl); color: var(--tx); font: inherit; }
+  button:active { border-color: var(--ak); color: var(--ak); }
+  button:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid var(--ak); outline-offset: 2px; }
+  .regler { display: grid; grid-template-columns: 110px 1fr 56px; gap: 10px; align-items: center; }
+  .regler span:last-child { text-align: right; color: var(--t2); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--ak); }
+  details { border: 1px solid var(--ra); border-radius: 8px; padding: 8px 12px; background: var(--fl); }
+  summary { cursor: pointer; }
+  .schalter { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--ra); align-items: flex-start; }
+  .schalter small { color: var(--t2); }
+  @media (min-width: 900px) { body { display: grid; grid-template-columns: 1fr 380px; grid-template-rows: auto 1fr; } #bild { height: 100%; grid-row: 1 / 3; } #bedienung { overflow: auto; align-content: start; } }
+</style>
+</head>
+<body>
+<canvas id="bild"></canvas>
+<div id="status">lädt …</div>
+<div id="bedienung"></div>
+<script type="module" src="src/haupt.js"></script>
+</body>
+</html>

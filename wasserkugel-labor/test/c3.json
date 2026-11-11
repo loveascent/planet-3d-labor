@@ -1,0 +1,5 @@
+{"q":"?test&tier=potato&scene=tasse","w":720,"h":720,"steps":[
+ {"eval":"__L.run(2)"},{"shot":"/tmp/claude-0/e0.jpg"},
+ {"eval":"__L.run(80)"},{"shot":"/tmp/claude-0/e1.jpg"},
+ {"eval":"__L.run(80)"},{"shot":"/tmp/claude-0/e2.jpg"},{"eval":"[__L.S.N,__L.box()]"}
+]}

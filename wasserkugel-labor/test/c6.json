@@ -1,0 +1,6 @@
+{"q":"?test&tier=potato&scene=tasse","w":720,"h":720,"steps":[
+ {"eval":"__L.run(50)"},{"shot":"/tmp/claude-0/h1.jpg"},{"eval":"__L.leak()"},
+ {"eval":"__L.run(50)"},{"shot":"/tmp/claude-0/h2.jpg"},{"eval":"__L.leak()"},
+ {"eval":"__L.run(50)"},{"shot":"/tmp/claude-0/h3.jpg"},{"eval":"__L.leak()"},
+ {"eval":"__L.run(50)"},{"shot":"/tmp/claude-0/h4.jpg"},{"eval":"__L.leak()"},{"eval":"[__L.box(),__L.S.time]"}
+]}

@@ -1,0 +1,1471 @@
+<title>Ereignis-Labor</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Aufbau: Bild oben, Statuszeile, Bedienung darunter; ab 900 px Bedienung als Spalte rechts. Bewusst nur dunkel (Weltraum). */
+  :root { color-scheme: dark; --bg: #0b0d12; --fl: #151923; --ra: #2a3040; --tx: #e8eaf0; --t2: #9aa3b5; --ak: #ffb454; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--tx); font: 14px/1.4 system-ui, sans-serif; }
+  #bild { display: block; width: 100%; height: 62vh; touch-action: none; background: #000; }
+  #status { padding-block: 6px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); color: var(--t2); font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--ra); }
+  #bedienung { padding-block: 12px 32px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 760px; margin: 0 auto; display: grid; gap: 10px; }
+  .reihe { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { flex: 1 1 auto; min-height: 42px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--ra); background: var(--fl); color: var(--tx); font: inherit; }
+  button:active { border-color: var(--ak); color: var(--ak); }
+  button:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid var(--ak); outline-offset: 2px; }
+  .regler { display: grid; grid-template-columns: 110px 1fr 56px; gap: 10px; align-items: center; }
+  .regler span:last-child { text-align: right; color: var(--t2); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--ak); }
+  details { border: 1px solid var(--ra); border-radius: 8px; padding: 8px 12px; background: var(--fl); }
+  summary { cursor: pointer; }
+  .schalter { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--ra); align-items: flex-start; }
+  .schalter small { color: var(--t2); }
+  @media (min-width: 900px) { body { display: grid; grid-template-columns: 1fr 380px; grid-template-rows: auto 1fr; } #bild { height: 100%; grid-row: 1 / 3; } #bedienung { overflow: auto; align-content: start; } }
+</style>
+
+<canvas id="bild"></canvas>
+<div id="status">lädt …</div>
+<div id="bedienung"></div>
+<script type="module">
+// src/geraet.js
+async function geraetHolen() {
+  if (!navigator.gpu) throw new Error("Dieser Browser hat kein WebGPU.");
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  if (!adapter) throw new Error("Kein WebGPU-Adapter gefunden.");
+  const device = await adapter.requestDevice();
+  device.addEventListener("uncapturederror", (e) => console.error("GPU-Fehler: " + e.error.message));
+  return { device, adapter, format: navigator.gpu.getPreferredCanvasFormat() };
+}
+var modul = (device, code, name) => {
+  const m = device.createShaderModule({ code, label: name });
+  m.getCompilationInfo().then((i) => {
+    for (const x of i.messages) if (x.type === "error") console.error(`WGSL ${name} Zeile ${x.lineNum}: ${x.message}`);
+  });
+  return m;
+};
+
+// src/bausteine.js
+var BAUSTEINE = [
+  { schluessel: "traeger", name: "Tr\xE4ger: Achsenschnitt", text: "Die Physik des Ereignisses als d\xFCnner 2D-Schnitt (Abstand von der Achse \xD7 H\xF6he). Aus: nur Wurfbahnen, kein Gas.", an: true },
+  { schluessel: "marker", name: "Sichtbar: Marker-Partikel", text: "Partikel, die vom Tr\xE4ger durch den Raum getragen werden. Das ist das, was man sieht.", an: true },
+  { schluessel: "turbulenz", name: "Turbulenz der Marker", text: "Kleine 3D-Wirbel (ABC-Str\xF6mung), St\xE4rke folgt der Str\xF6mungsgeschwindigkeit des Tr\xE4gers.", an: true },
+  { schluessel: "schatten", name: "Eigenschatten", text: "Jeder Marker misst, wie viel Asche zwischen ihm und der Sonne liegt.", an: true },
+  { schluessel: "ballistik", name: "Wurfgeschosse", text: "Auswurf und Lavabomben auf Wurfbahnen mit Luftwiderstand gegen das Gas des Tr\xE4gers.", an: true },
+  { schluessel: "staub", name: "Staub vom Boden", text: "Bodenwind \xFCber der Schwelle hebt Staub: daraus entsteht der Stiel des Pilzes.", an: true },
+  { schluessel: "narben", name: "Narben im Boden", text: "Krater, Auswurfdecke, Glut und Ru\xDF bleiben in der Planetenkarte, nachdem die Physik schl\xE4ft.", an: true },
+  { schluessel: "wind", name: "H\xF6henwind", text: "Schert die Wolke mit der H\xF6he (N\xE4herung: der Tr\xE4ger selbst rechnet ohne Wind).", an: false },
+  { schluessel: "schnitt", name: "Schnittbild (Pr\xFCfansicht)", text: "Zeigt das Tr\xE4gerfeld des ersten wachen Slots als Bild.", an: false }
+];
+function schalterAusUrl(qs2) {
+  const s = Object.fromEntries(BAUSTEINE.map((b) => [b.schluessel, b.an]));
+  for (const k of (qs2.get("aus") || "").split(",")) if (k in s) s[k] = false;
+  for (const k of (qs2.get("an") || "").split(",")) if (k in s) s[k] = true;
+  return s;
+}
+
+// src/gemeinsam.js
+var NR = 64;
+var NZ = 128;
+var RD = 2;
+var HD = 4;
+var H = RD / NR;
+var SLOTS = 8;
+var SLOT_FELDER = [
+  "an",
+  "t",
+  "dt",
+  "neu",
+  // wach?, Zeit seit Zündung, Zeitschritt, 1 nur im Zündschritt
+  "n2a",
+  "n2b",
+  "ztp",
+  "turb",
+  // Schichtung N² unten/oben, Höhe der Sperrschicht, Turbulenzgrad der Marker
+  "qR",
+  "qH",
+  "qB",
+  "qAsche",
+  // Dauerquelle (Schlot): Radius, Höhe, Auftrieb, Asche
+  "qGlut",
+  "qAn",
+  "strahl",
+  "gewicht",
+  // Glut der Quelle, Quelle an?, Schubgeschwindigkeit, Aschegewicht
+  "sink",
+  "kuehl",
+  "heben",
+  "schwelle",
+  // Sinkgeschwindigkeit Asche, Abkühlrate, Staubheben vom Boden, Schwellwind
+  "expQ",
+  "skala",
+  "art",
+  "bombenAnteil",
+  // Volumenquelle (Feuerball dehnt sich), Planetenradien je Einheit, Ereignisart, Anteil Wurfgeschosse
+  "upx",
+  "upy",
+  "upz",
+  "anteil",
+  // Ort auf der Kugel (Einheitsvektor), kumulierter Marker-Anteil
+  "ejV",
+  "g",
+  "seed",
+  "feuerAnteil",
+  // Auswurfgeschwindigkeit am Kraterrand, Fallbeschleunigung, Zufall, Anteil Feuerball-Marker
+  "fr",
+  "fg",
+  "fb",
+  "spawn",
+  // Rauchfarbe, Nachschubrate toter Marker
+  "leben",
+  "kraterR",
+  "feuerR",
+  "feuerZ",
+  // Marker-Lebensdauer, Kraterradius, Feuerball-Radius und -Höhe
+  "bodenH",
+  "wind",
+  "res2",
+  "res3"
+  // Geländehöhe am Ort, Windscherung, Reserve
+];
+var SLOT_N = SLOT_FELDER.length;
+var F = Object.fromEntries(SLOT_FELDER.map((n, i) => [n, i]));
+var ART = { VULKAN: 1, BOMBE: 2, EINSCHLAG: 3 };
+var WGSL_GEMEINSAM = (
+  /* wgsl */
+  `
+const NR: i32 = ${NR};
+const NZ: i32 = ${NZ};
+const RD: f32 = ${RD.toFixed(4)};
+const HD: f32 = ${HD.toFixed(4)};
+const H: f32 = ${H.toFixed(6)};
+const SLOTS: u32 = ${SLOTS}u;
+const PI: f32 = 3.14159265;
+struct Slot { ${SLOT_FELDER.map((n) => `${n}: f32`).join(", ")} }
+
+fn pcg(v: u32) -> u32 {
+  let s = v * 747796405u + 2891336453u;
+  let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+  return (w >> 22u) ^ w;
+}
+fn zuf(seed: ptr<function, u32>) -> f32 { *seed = pcg(*seed); return f32(*seed >> 8u) / 16777216.0; }
+
+// Tangentialbasis am Ereignisort: Spalten = Ost, Nord, Oben
+fn basis(up: vec3f) -> mat3x3f {
+  let a = select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(up.y) > 0.9);
+  let e1 = normalize(cross(a, up));
+  return mat3x3f(e1, cross(up, e1), up);
+}
+// Ereignis-Koordinaten (x, y = am Boden entlang, z = H\xF6he) auf die Kugel biegen:
+// Abstand von der Achse wird Bogenl\xE4nge, H\xF6he wird Radius. Gro\xDFe Wolken legen sich so um den Planeten.
+fn lokalZuWelt(p: vec3f, up: vec3f, skala: f32, bodenH: f32) -> vec3f {
+  let B = basis(up);
+  let rr = length(p.xy);
+  let a = rr * skala;
+  let d2 = p.xy / max(rr, 1e-6);
+  return (1.0 + bodenH + p.z * skala) * (cos(a) * B[2] + sin(a) * (B[0] * d2.x + B[1] * d2.y));
+}
+// Schwarzk\xF6rper-\xE4hnliche Glutfarbe: dunkelrot -> orange -> gelbwei\xDF
+fn glutFarbe(g: f32) -> vec3f {
+  let x = clamp(g, 0.0, 4.0);
+  return vec3f(1.0, 0.33, 0.07) * x * x * 1.6 + vec3f(0.9, 0.8, 0.5) * max(x - 0.8, 0.0) * 2.0;
+}
+`
+);
+function slotSicht(daten, s) {
+  const o = s * SLOT_N;
+  return new Proxy({}, {
+    get: (_, n) => daten[o + F[n]],
+    set: (_, n, v) => {
+      if (!(n in F)) throw new Error("Slot-Feld unbekannt: " + String(n));
+      daten[o + F[n]] = v;
+      return true;
+    }
+  });
+}
+
+// src/formeln.js
+var sedovQuelle = (A, t) => 4 * Math.PI / 5 * A ** 3 * Math.max(t, 1e-4) ** 0.2;
+
+// src/ereignisse.js
+var VORLAGEN = {
+  vulkan: {
+    art: ART.VULKAN,
+    skala: 0.05,
+    dauer: 60,
+    ausbruch: 40,
+    n2a: 0.5,
+    n2b: 5,
+    ztp: 2.3,
+    turb: 0.3,
+    qR: 0.16,
+    qH: 0.2,
+    qB: 3.5,
+    qAsche: 1.6,
+    qGlut: 1.3,
+    strahl: 0.8,
+    gewicht: 0.3,
+    sink: 0.03,
+    kuehl: 1.6,
+    heben: 0,
+    schwelle: 0,
+    bombenAnteil: 0.03,
+    ejV: 0.75,
+    g: 1.6,
+    feuerAnteil: 0,
+    spawn: 0.9,
+    leben: 30,
+    farbe: [0.36, 0.33, 0.31],
+    kraterR: 0.6,
+    feuerR: 0,
+    feuerZ: 0,
+    b0: 0,
+    tExp: 0,
+    rEnd: 0
+  },
+  bombe: {
+    art: ART.BOMBE,
+    skala: 0.045,
+    dauer: 45,
+    ausbruch: 0,
+    n2a: 0.5,
+    n2b: 5,
+    ztp: 2.4,
+    turb: 0.3,
+    qR: 0,
+    qH: 0,
+    qB: 0,
+    qAsche: 0,
+    qGlut: 0,
+    strahl: 0,
+    gewicht: 0.3,
+    sink: 0.02,
+    kuehl: 0.45,
+    heben: 5,
+    schwelle: 0.12,
+    bombenAnteil: 0,
+    ejV: 0,
+    g: 1.6,
+    feuerAnteil: 0.6,
+    spawn: 25,
+    leben: 40,
+    farbe: [0.55, 0.5, 0.46],
+    kraterR: 0.2,
+    feuerR: 0.32,
+    feuerZ: 0.3,
+    b0: 9,
+    tExp: 0.45,
+    rEnd: 0.5
+  },
+  einschlag: {
+    art: ART.EINSCHLAG,
+    skala: 0.11,
+    dauer: 45,
+    ausbruch: 0,
+    n2a: 0.4,
+    n2b: 4,
+    ztp: 2.6,
+    turb: 0.35,
+    qR: 0,
+    qH: 0,
+    qB: 0,
+    qAsche: 0,
+    qGlut: 0,
+    strahl: 0,
+    gewicht: 0.5,
+    sink: 0.04,
+    kuehl: 0.35,
+    heben: 6,
+    schwelle: 0.12,
+    bombenAnteil: 0.2,
+    ejV: 0.9,
+    g: 1.4,
+    feuerAnteil: 0.45,
+    spawn: 25,
+    leben: 40,
+    farbe: [0.42, 0.36, 0.3],
+    kraterR: 0.34,
+    feuerR: 0.34,
+    feuerZ: 0,
+    b0: 10,
+    tExp: 0.5,
+    rEnd: 0.55
+  }
+};
+function erzeugeEreignisse(device) {
+  const daten = new Float32Array(SLOTS * SLOT_N);
+  const puffer = device.createBuffer({ size: daten.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const info = new Array(SLOTS).fill(null);
+  let traeger = null, boden = null, uhr = 0;
+  const anfang = (v) => {
+    const z = new Float32Array(NR * NZ * 4);
+    if (v.feuerR > 0) for (let j = 0; j < NZ; j++) for (let i = 0; i < NR; i++) {
+      const d = Math.hypot((i + 0.5) * H, (j + 0.5) * H - v.feuerZ) / v.feuerR;
+      const w = d < 1 ? 1 - d * d * (3 - 2 * d) : 0, o = (j * NR + i) * 4;
+      z[o + 1] = v.b0 * w;
+      z[o + 2] = 2 * w;
+      z[o + 3] = 2.2 * w;
+    }
+    return z;
+  };
+  return {
+    daten,
+    puffer,
+    info,
+    verbinde(t, b) {
+      traeger = t;
+      boden = b;
+    },
+    wach: () => info.filter(Boolean).length,
+    hoechster() {
+      let h = -1;
+      info.forEach((x, s) => {
+        if (x) h = s;
+      });
+      return h;
+    },
+    // Ereignis zünden. up = Ort auf der Kugel (Einheitsvektor). opt.groesse skaliert das ganze Ereignis.
+    starte(name, up, opt = {}) {
+      const v = { ...VORLAGEN[name], ...opt };
+      let s = info.findIndex((x) => !x);
+      if (s < 0) {
+        s = 0;
+        info.forEach((x, k) => {
+          if (x.t > info[s].t) s = k;
+        });
+        this.schlafen(s);
+      }
+      const S = slotSicht(daten, s);
+      for (const k of [
+        "n2a",
+        "n2b",
+        "ztp",
+        "turb",
+        "qR",
+        "qH",
+        "qB",
+        "qAsche",
+        "qGlut",
+        "strahl",
+        "gewicht",
+        "sink",
+        "kuehl",
+        "heben",
+        "schwelle",
+        "bombenAnteil",
+        "ejV",
+        "g",
+        "feuerAnteil",
+        "spawn",
+        "leben",
+        "kraterR",
+        "feuerR",
+        "feuerZ",
+        "art"
+      ]) S[k] = v[k];
+      S.skala = v.skala * (opt.groesse || 1);
+      S.an = 1;
+      S.t = 0;
+      S.neu = 1;
+      S.qAn = v.ausbruch > 0 ? 1 : 0;
+      S.expQ = 0;
+      S.upx = up[0];
+      S.upy = up[1];
+      S.upz = up[2];
+      S.fr = v.farbe[0];
+      S.fg = v.farbe[1];
+      S.fb = v.farbe[2];
+      S.seed = Math.random() * 100;
+      S.wind = opt.wind ?? 0.25;
+      S.bodenH = boden ? boden.hoehe(up) : 0;
+      info[s] = { name, v, t: 0, slot: s, up };
+      traeger?.setzeSlot(s, anfang(v));
+      if (boden) {
+        const R = S.kraterR * S.skala;
+        if (v.art === ART.VULKAN) {
+          boden.stempel({ art: 1, zentrum: up, radius: R, rand: 0.2 * R, tiefe: 0.05 * R, hitze: 2.5, russ: 0.35, basis: S.bodenH });
+          S.bodenH += 0.2 * R * 0.9;
+        } else {
+          boden.stempel({ art: 0, zentrum: up, radius: R, rand: 0.07 * R, tiefe: 0.3 * R, hitze: v.art === ART.EINSCHLAG ? 3 : 1.2, russ: 0.8, basis: S.bodenH });
+          S.bodenH = Math.max(S.bodenH - 0.3 * R, 0);
+        }
+      }
+      return s;
+    },
+    schlafen(s) {
+      const x = info[s];
+      if (!x) return;
+      const S = slotSicht(daten, s);
+      boden?.stempel({ art: 2, zentrum: x.up, radius: 1.3 * S.skala, rand: 0, tiefe: 0, hitze: 0, russ: 0.5, basis: 0 });
+      S.an = 0;
+      info[s] = null;
+    },
+    alleSchlafen() {
+      for (let s = 0; s < SLOTS; s++) {
+        if (info[s]) {
+          slotSicht(daten, s).an = 0;
+          info[s] = null;
+        }
+      }
+    },
+    // vor jedem Zeitschritt
+    schritt(dt) {
+      uhr += dt;
+      let wach = 0;
+      for (const x of info) if (x) wach++;
+      let kum = 0;
+      for (let s = 0; s < SLOTS; s++) {
+        const S = slotSicht(daten, s), x = info[s];
+        if (x) {
+          x.t += dt;
+          S.t = x.t;
+          S.dt = dt;
+          if (x.v.ausbruch > 0 && x.t > x.v.ausbruch) S.qAn = 0;
+          S.expQ = x.v.tExp > 0 && x.t < x.v.tExp ? sedovQuelle(x.v.rEnd / x.v.tExp ** 0.4, x.t) : 0;
+          if (x.t > x.v.dauer) {
+            this.schlafen(s);
+          } else kum += 1 / wach;
+        }
+        S.anteil = kum;
+      }
+      device.queue.writeBuffer(puffer, 0, daten);
+    },
+    nachSchritt() {
+      for (let s = 0; s < SLOTS; s++) daten[s * SLOT_N + 3] = 0;
+    }
+    // 'neu' gilt genau einen Schritt
+  };
+}
+
+// src/traeger/achse.js
+var KOPF = WGSL_GEMEINSAM + /* wgsl */
+`
+fn ix(i: i32, j: i32, s: u32) -> u32 { return (s * u32(NZ) + u32(clamp(j, 0, NZ - 1))) * u32(NR) + u32(clamp(i, 0, NR - 1)); }
+`;
+var ADVEKTION = KOPF + /* wgsl */
+`
+@group(0) @binding(0) var<storage, read> slots: array<Slot>;
+@group(0) @binding(1) var<storage, read> zA: array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> zB: array<vec4f>;
+@group(0) @binding(3) var feld: texture_2d_array<f32>;
+@group(0) @binding(4) var samp: sampler;
+
+fn cr(t: f32) -> vec4f { let a = t * t; let b = a * t; return vec4f(-0.5 * b + a - 0.5 * t, 1.5 * b - 2.5 * a + 1.0, -1.5 * b + 2.0 * a + 0.5 * t, 0.5 * b - 0.5 * a); }
+// Bikubisch (Catmull-Rom) mit Begrenzer auf die vier n\xE4chsten Zellen: verschmiert viel weniger als bilinear,
+// erzeugt aber keine neuen Extremwerte. c in Zellkoordinaten (0 = Mitte der ersten Zelle).
+fn lesen(c: vec2f, s: u32) -> vec4f {
+  let f = floor(c); let w = c - f; let i = i32(f.x); let j = i32(f.y);
+  let wx = cr(w.x); let wy = cr(w.y);
+  var summe = vec4f(0.0); var lo = vec4f(1e9); var hi = vec4f(-1e9);
+  for (var b = -1; b <= 2; b++) {
+    var zeile = vec4f(0.0);
+    for (var a = -1; a <= 2; a++) {
+      let v = zA[ix(i + a, j + b, s)]; zeile += v * wx[a + 1];
+      if (a >= 0 && a <= 1 && b >= 0 && b <= 1) { lo = min(lo, v); hi = max(hi, v); }
+    }
+    summe += zeile * wy[b + 1];
+  }
+  return clamp(summe, lo, hi);
+}
+@compute @workgroup_size(8, 8, 1)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  let s = id.z; let S = slots[s];
+  if (S.an < 0.5) { return; }
+  let i = i32(id.x); let j = i32(id.y);
+  let p = (vec2f(f32(i), f32(j)) + 0.5) * H;
+  let u = textureSampleLevel(feld, samp, p / vec2f(RD, HD), s, 0.0).xy;
+  // Transport (semi-Lagrange, Stam 1999): woher kam diese Zelle?
+  var q = lesen((p - u * S.dt) / H - 0.5, s);
+  q.z = lesen((p - (u - vec2f(0.0, S.sink)) * S.dt) / H - 0.5, s).z;      // Asche sinkt zus\xE4tzlich
+  // Auftrieb erzeugt Wirbel
+  let l = zA[ix(i - 1, j, s)]; let r = zA[ix(i + 1, j, s)];
+  q.x -= ((r.y - S.gewicht * r.z) - (l.y - S.gewicht * l.z)) / (2.0 * H * p.x) * S.dt;
+  // Schichtung der Umgebungsluft
+  let n2 = mix(S.n2a, S.n2b, smoothstep(S.ztp - 0.25, S.ztp + 0.25, p.y));
+  q.y -= n2 * u.y * S.dt;
+  q.w *= exp(-S.kuehl * S.dt);
+  // Staub vom Boden: Bodenwind \xFCber der Schwelle hebt Staub (unterste Zellreihe)
+  if (j == 0) { q.z += S.heben * max(abs(u.x) - S.schwelle, 0.0) * S.dt; }
+  // Dauerquelle (Schlot) und Schubstrahl (Wirbelschicht am Strahlrand: \u03C9 = W / Randdicke)
+  if (S.qAn > 0.5 && p.y < S.qH) {
+    let k = clamp(10.0 * S.dt, 0.0, 1.0);
+    if (p.x < S.qR) { q.y = mix(q.y, S.qB, k); q.z = mix(q.z, S.qAsche, k); q.w = mix(q.w, S.qGlut, k); }
+    if (abs(p.x - S.qR) < H) { q.x = mix(q.x, S.strahl / (2.0 * H * p.x), k); }
+  }
+  // Schwamm an Au\xDFen- und Oberrand: nichts prallt zur\xFCck
+  let sw = clamp((smoothstep(0.82, 1.0, p.x / RD) + smoothstep(0.88, 1.0, p.y / HD)) * 6.0 * S.dt, 0.0, 1.0);
+  q.x *= 1.0 - sw; q.y *= 1.0 - sw; q.z *= 1.0 - sw;
+  q.z = clamp(q.z, 0.0, 6.0);
+  zB[ix(i, j, s)] = q;
+}`;
+var LOESER = KOPF + /* wgsl */
+`
+@group(0) @binding(0) var<storage, read> slots: array<Slot>;
+@group(0) @binding(1) var<storage, read> z: array<vec4f>;
+@group(0) @binding(2) var<storage, read_write> psi: array<f32>;
+@group(0) @binding(3) var<uniform> par: vec4f;      // x = Farbe (0/1), y = \xDCberrelaxation
+@compute @workgroup_size(8, 8, 1)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  let s = id.z; let i = i32(id.x); let j = i32(id.y);
+  if (((i + j) & 1) != i32(par.x) || slots[s].an < 0.5) { return; }
+  let fi = f32(i); let rr = (fi + 0.5) * H;
+  let k = ix(i, j, s); let alt = psi[k];
+  let ap = (fi + 0.5) / (fi + 1.0);                       // r_i / r_(i+\xBD)
+  var am = 0.0; var diag = ap + 2.0 + 4.0;                // Achse (i = 0): \u03C8 ~ r\xB2, daraus der Fluss \xFCber r = 0
+  var pl = 0.0;
+  if (i > 0) { am = (fi + 0.5) / fi; diag = ap + am + 2.0; pl = psi[k - 1u]; }
+  let pr = select(alt, psi[k + 1u], i < NR - 1);          // Au\xDFenrand offen: Luft darf einstr\xF6men
+  let pu = select(alt, psi[k + u32(NR)], j < NZ - 1);     // Oberrand offen
+  let pd = select(-alt, psi[k - u32(NR)], j > 0);         // Boden dicht: \u03C8 = 0
+  let neu = (ap * pr + am * pl + pu + pd + H * H * rr * rr * z[k].x) / diag;
+  psi[k] = mix(alt, neu, par.y);
+}`;
+var GESCHWINDIGKEIT = KOPF + /* wgsl */
+`
+@group(0) @binding(0) var<storage, read> slots: array<Slot>;
+@group(0) @binding(1) var<storage, read> z: array<vec4f>;
+@group(0) @binding(2) var<storage, read> psi: array<f32>;
+@group(0) @binding(3) var aus: texture_storage_2d_array<rgba16float, write>;
+@compute @workgroup_size(8, 8, 1)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  let s = id.z; let S = slots[s];
+  if (S.an < 0.5) { return; }
+  let i = i32(id.x); let j = i32(id.y);
+  let k = ix(i, j, s); let m = psi[k];
+  let rr = (f32(i) + 0.5) * H; let zz = (f32(j) + 0.5) * H;
+  let pr = select(m, psi[k + 1u], i < NR - 1);
+  let pl = select(m, psi[k - 1u], i > 0);                 // \u03C8 ist gerade in r
+  let pu = select(m, psi[k + u32(NR)], j < NZ - 1);
+  let pd = select(-m, psi[k - u32(NR)], j > 0);
+  var u = vec2f(-(pu - pd), pr - pl) / (2.0 * H * rr);
+  // Feuerball dehnt sich: Punktquelle im Halbraum (plus Spiegelquelle unter dem Boden), exakt divergenzfrei au\xDFerhalb
+  if (S.expQ > 0.0) {
+    let a = vec2f(rr, zz - S.feuerZ); let b = vec2f(rr, zz + S.feuerZ);
+    let e = 0.004;
+    u += S.expQ / (4.0 * PI) * (a / pow(dot(a, a) + e, 1.5) + b / pow(dot(b, b) + e, 1.5));
+  }
+  let q = z[k];
+  textureStore(aus, vec2i(i, j), s, vec4f(u, q.z, q.w));
+}`;
+function erzeugeTraegerAchse(device, slotPuffer) {
+  const n = SLOTS * NR * NZ;
+  const puf = (bytes) => device.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
+  const z = [puf(n * 16), puf(n * 16)];
+  const psi = puf(n * 4);
+  const feld = device.createTexture({
+    size: [NR, NZ, SLOTS],
+    format: "rgba16float",
+    usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC
+  });
+  const feldSicht = feld.createView({ dimension: "2d-array" });
+  const samp = device.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
+  const mk = (code, name) => device.createComputePipeline({ layout: "auto", compute: { module: modul(device, code, name), entryPoint: "main" } });
+  const pAdv = mk(ADVEKTION, "achse-advektion");
+  const pLoe = mk(LOESER, "achse-loeser");
+  const pGes = mk(GESCHWINDIGKEIT, "achse-geschwindigkeit");
+  const farbe = [0, 1].map((c) => {
+    const b = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    device.queue.writeBuffer(b, 0, new Float32Array([c, 1.7, 0, 0]));
+    return b;
+  });
+  const bg = (p, e) => device.createBindGroup({ layout: p.getBindGroupLayout(0), entries: e.map((r, i) => ({ binding: i, resource: r instanceof GPUBuffer ? { buffer: r } : r })) });
+  const gruppen = [0, 1].map((a) => ({
+    adv: bg(pAdv, [slotPuffer, z[a], z[1 - a], feldSicht, samp]),
+    loe: [0, 1].map((c) => bg(pLoe, [slotPuffer, z[1 - a], psi, farbe[c]])),
+    ges: bg(pGes, [slotPuffer, z[1 - a], psi, feld.createView({ dimension: "2d-array" })])
+  }));
+  let richtung = 0;
+  const null4 = new Float32Array(NR * NZ);
+  const nullFeld = new Uint16Array(NR * NZ * 4);
+  return {
+    feld,
+    feldSicht,
+    samp,
+    iterationen: 12,
+    // Anfangszustand eines Slots setzen (Float32Array NR*NZ*4: ξ, b, asche, glut)
+    setzeSlot(s, daten) {
+      for (const b of z) device.queue.writeBuffer(b, s * NR * NZ * 16, daten);
+      device.queue.writeBuffer(psi, s * NR * NZ * 4, null4);
+      device.queue.writeTexture({ texture: feld, origin: [0, 0, s] }, nullFeld, { bytesPerRow: NR * 8, rowsPerImage: NZ }, [NR, NZ, 1]);
+    },
+    // Ein Zeitschritt für die Slots 0..hoechster. Kosten wachsen nur mit der Zahl wacher Ereignisse.
+    schritt(enc, hoechster) {
+      if (hoechster < 0) return;
+      const g = gruppen[richtung];
+      const dx = NR / 8, dy = NZ / 8, dz = hoechster + 1;
+      let p = enc.beginComputePass();
+      p.setPipeline(pAdv);
+      p.setBindGroup(0, g.adv);
+      p.dispatchWorkgroups(dx, dy, dz);
+      p.end();
+      p = enc.beginComputePass();
+      p.setPipeline(pLoe);
+      for (let k = 0; k < this.iterationen; k++) for (let c = 0; c < 2; c++) {
+        p.setBindGroup(0, g.loe[c]);
+        p.dispatchWorkgroups(dx, dy, dz);
+      }
+      p.end();
+      p = enc.beginComputePass();
+      p.setPipeline(pGes);
+      p.setBindGroup(0, g.ges);
+      p.dispatchWorkgroups(dx, dy, dz);
+      p.end();
+      richtung = 1 - richtung;
+    },
+    // Prüfzugriff: Feld eines Slots zurücklesen (Float32Array NR*NZ*4: u_r, u_z, asche, glut)
+    async lesen(s) {
+      const b = device.createBuffer({ size: NR * NZ * 8, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      const enc = device.createCommandEncoder();
+      enc.copyTextureToBuffer({ texture: feld, origin: [0, 0, s] }, { buffer: b, bytesPerRow: NR * 8, rowsPerImage: NZ }, [NR, NZ, 1]);
+      device.queue.submit([enc.finish()]);
+      await b.mapAsync(GPUMapMode.READ);
+      const h = new Uint16Array(b.getMappedRange().slice(0));
+      b.destroy();
+      const f = new Float32Array(h.length);
+      for (let i = 0; i < h.length; i++) f[i] = halb(h[i]);
+      return f;
+    },
+    zellenJeSlot: NR * NZ
+  };
+}
+function halb(h) {
+  const s = h & 32768 ? -1 : 1, e = h >> 10 & 31, m = h & 1023;
+  if (e === 0) return s * Math.pow(2, -14) * (m / 1024);
+  if (e === 31) return m ? NaN : s * Infinity;
+  return s * Math.pow(2, e - 15) * (1 + m / 1024);
+}
+
+// src/sichtbar/marker.js
+var WGSL_BLICK = (
+  /* wgsl */
+  `
+struct Blick { vp: mat4x4f, kam: vec3f, zeit: f32, sonne: vec3f, dt: f32, aufl: vec2f, bild: f32, schalter: f32, tStempel: f32, pix: f32, anzahl: f32, brenn: f32 }
+fn tonwert(c: vec3f) -> vec3f {            // ACES-N\xE4herung (Narkowicz 2015) + Gamma
+  let x = c * 0.8;
+  return pow(clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2));
+}
+`
+);
+var P_STRUCT = (
+  /* wgsl */
+  `
+struct P { pos: vec3f, alter: f32, vel: vec3f, art: f32, licht: f32, dichte: f32, glut: f32, gr: f32 }
+`
+);
+var RECHNEN = WGSL_GEMEINSAM + WGSL_BLICK + P_STRUCT + /* wgsl */
+`
+@group(0) @binding(0) var<uniform> B: Blick;
+@group(0) @binding(1) var<storage, read> slots: array<Slot>;
+@group(0) @binding(2) var<storage, read_write> ps: array<P>;
+@group(0) @binding(3) var feld: texture_2d_array<f32>;
+@group(0) @binding(4) var samp: sampler;
+
+fn gas(s: u32, p: vec3f) -> vec4f {        // Tr\xE4ger am Ort p: (u_r, u_z, asche, glut)
+  let r = length(p.xy);
+  if (r > RD || p.z > HD) { return vec4f(0.0); }
+  var f = textureSampleLevel(feld, samp, vec2f(r / RD, p.z / HD), s, 0.0);
+  f.x *= min(r / (0.5 * H), 1.0);
+  return f;
+}
+fn abc(p: vec3f, t: f32) -> vec3f {        // Arnold-Beltrami-Childress-Str\xF6mung, 2 Gr\xF6\xDFen, exakt divergenzfrei
+  let a = p * 7.0 + vec3f(0.0, 1.3, 2.1) + t * vec3f(0.31, -0.23, 0.17);
+  let b = p * 16.0 + vec3f(4.0, 0.7, 2.9) - t * vec3f(0.4, 0.33, -0.5);
+  return vec3f(sin(a.z) + cos(a.y), sin(a.x) + cos(a.z), sin(a.y) + cos(a.x)) * 0.6
+       + vec3f(sin(b.z) + cos(b.y), sin(b.x) + cos(b.z), sin(b.y) + cos(b.x)) * 0.4;
+}
+fn kreis(r: f32, phi: f32) -> vec2f { return r * vec2f(cos(phi), sin(phi)); }
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  let i = id.x;
+  if (i >= u32(B.anzahl)) { return; }
+  // Zuteilung: fester Zufallswert je Marker gegen die kumulierten Anteile der wachen Ereignisse
+  let a = f32(pcg(i) >> 8u) / 16777216.0;
+  var s = SLOTS;
+  for (var k = 0u; k < SLOTS; k++) { if (a < slots[k].anteil) { s = k; break; } }
+  var p = ps[i];
+  if (s == SLOTS) { if (p.alter >= 0.0) { p.alter = -1.0; ps[i] = p; } return; }
+  let S = slots[s];
+  let dt = S.dt;
+  let schalter = u32(B.schalter);
+  var seed = pcg(i * 9781u + u32(B.bild) * 6271u + 17u);
+  var sorte = u32(p.art) >> 6u;
+  var tot = p.alter < 0.0 || (u32(p.art) & 63u) != s;
+  var geboren = false;
+
+  if (S.neu > 0.5) {
+    // Z\xFCndung: Feuerball besetzen, Auswurf starten, Rest bleibt Reserve f\xFCr aufgewirbelten Staub
+    tot = true;
+    let u1 = zuf(&seed);
+    if (u1 < S.feuerAnteil) {
+      let d = normalize(vec3f(zuf(&seed), zuf(&seed), zuf(&seed)) * 2.0 - 1.0) * S.feuerR * pow(zuf(&seed), 0.333);
+      p.pos = vec3f(d.xy, abs(d.z + S.feuerZ) + 0.01);
+      p.vel = vec3f(0.0); sorte = 0u; p.gr = 0.03 + 0.03 * zuf(&seed); geboren = true;
+    } else if (u1 < S.feuerAnteil + S.bombenAnteil && S.art > 2.5 && (schalter & 4u) != 0u) {
+      // Auswurf (Z-Modell-artig): je n\xE4her am Zentrum gestartet, desto schneller. v \u221D (x/R)^(\u22121/\u03BC), \u03BC \u2248 0,55 (Housen & Holsapple 2011)
+      let x = sqrt(mix(0.03, 1.0, zuf(&seed)));
+      let phi = 6.2832 * zuf(&seed);
+      let v = min(S.ejV * pow(x, -1.8), 5.0 * S.ejV) * (0.85 + 0.3 * zuf(&seed));
+      let w = radians(45.0 + 14.0 * (zuf(&seed) - 0.5));
+      p.pos = vec3f(kreis(x * S.kraterR, phi), 0.02);
+      p.vel = vec3f(kreis(v * cos(w), phi), v * sin(w));
+      sorte = 1u; p.gr = 0.008 + 0.02 * zuf(&seed) * zuf(&seed); p.licht = clamp(v / (3.0 * S.ejV), 0.0, 1.0); geboren = true;
+    }
+  } else if (tot && zuf(&seed) < S.spawn * dt) {
+    if (S.qAn > 0.5 && zuf(&seed) < 0.8) {
+      // Schlot: Gas-Marker, ein Teil als Lavabomben
+      p.pos = vec3f(kreis(S.qR * sqrt(zuf(&seed)), 6.2832 * zuf(&seed)), S.qH * zuf(&seed));
+      if (zuf(&seed) < S.bombenAnteil && (schalter & 4u) != 0u) {
+        let w = 0.5 * zuf(&seed); let v = S.ejV * (0.5 + 0.9 * zuf(&seed));
+        p.vel = vec3f(kreis(v * sin(w), 6.2832 * zuf(&seed)), v * cos(w));
+        sorte = 1u; p.gr = 0.006 + 0.012 * zuf(&seed); p.licht = 1.0;
+      } else { p.vel = vec3f(0.0); sorte = 0u; p.gr = 0.025 + 0.03 * zuf(&seed); }
+      geboren = true;
+    } else if (S.heben > 0.0 && (schalter & 8u) != 0u) {
+      // Staub: Kandidat am Boden, wird nur geboren, wo der Tr\xE4ger gerade Staub hebt
+      let q = vec3f(kreis(1.5 * zuf(&seed), 6.2832 * zuf(&seed)), H * (0.3 + zuf(&seed)));
+      let f = gas(s, q);
+      if (zuf(&seed) < S.heben * max(abs(f.x) - S.schwelle, 0.0) * 0.6) {
+        p.pos = q; p.vel = vec3f(0.0); sorte = 0u; p.gr = 0.025 + 0.03 * zuf(&seed); geboren = true;
+      }
+    }
+  }
+  if (geboren) { tot = false; p.alter = 0.0; p.dichte = 1.0; p.glut = 0.0; if (sorte == 0u) { p.licht = 1.0; } }
+  if (tot) {
+    if (p.alter >= 0.0 || (u32(p.art) & 63u) != s) { p.alter = -1.0; p.art = f32(s); ps[i] = p; }
+    return;
+  }
+
+  p.alter += dt;
+  let f = gas(s, p.pos);
+  if (sorte == 0u) {
+    // Gas-Marker: vom Tr\xE4ger getragen
+    let rr = length(p.pos.xy);
+    var u = vec3f(p.pos.xy / max(rr, 1e-5) * f.x, f.y);
+    if ((schalter & 1u) != 0u) { u += abc(p.pos + S.seed, S.t) * S.turb * length(f.xy); }
+    p.pos += u * dt;
+    p.pos.z = max(p.pos.z, 0.004);
+    let ende = S.leben * (0.5 + 0.5 * f32(pcg(i + 77u) & 255u) / 255.0);
+    p.dichte = clamp((ende - p.alter) / 4.0, 0.0, 1.0);          // die Marker SIND die Wolke; sie verblassen am Lebensende
+    p.glut = f.w;
+    if (p.alter > ende || rr > RD * 0.97 || p.pos.z > HD * 0.97) { p.alter = -1.0; }
+    // Eigenschatten: Asche zwischen Marker und Sonne aufsummieren (jeder Marker jedes 4. Bild)
+    if ((schalter & 2u) != 0u) {
+      if (((i + u32(B.bild)) & 3u) == 0u) {
+        let L = B.sonne * basis(vec3f(S.upx, S.upy, S.upz));     // Sonne in Ereignis-Koordinaten
+        var tau = 0.0; var q = p.pos;
+        for (var k = 0; k < 6; k++) {
+          q += L * 0.13;
+          if (q.z < 0.0) { tau += 9.0; break; }
+          tau += gas(s, q).z * 0.13;
+        }
+        // Wolkenoberfl\xE4che: die Asche nimmt nach au\xDFen ab, also zeigt \u2212\u2207asche nach au\xDFen
+        let er = p.pos.xy / max(rr, 1e-5); let e = 1.5 * H;
+        let gr = gas(s, p.pos + vec3f(er * e, 0.0)).z - gas(s, p.pos - vec3f(er * e, 0.0)).z;
+        let gz = gas(s, p.pos + vec3f(0.0, 0.0, e)).z - gas(s, p.pos - vec3f(0.0, 0.0, e)).z;
+        let nrm = -vec3f(er * gr, gz) / max(length(vec2f(gr, gz)), 0.02);
+        p.licht = exp(-5.0 * tau) * (0.55 + 0.45 * clamp(dot(nrm, L), -1.0, 1.0));
+      }
+    } else { p.licht = 1.0; }
+  } else if (sorte == 1u) {
+    // Wurfgeschoss: Schwerkraft + Luftwiderstand gegen das Gas des Tr\xE4gers
+    let rr = length(p.pos.xy);
+    let ug = vec3f(p.pos.xy / max(rr, 1e-5) * f.x, f.y);
+    p.vel += (vec3f(0.0, 0.0, -S.g) + (ug - p.vel) / 5.0) * dt;
+    p.pos += p.vel * dt;
+    p.glut = 1.6 * p.licht * exp(-0.5 * p.alter); p.dichte = 1.0;
+    if (p.pos.z <= 0.0) { p.pos.z = 0.003; p.vel = vec3f(0.0); sorte = 2u; }
+    if (rr > RD * 3.0) { p.alter = -1.0; }
+  } else {
+    p.glut = 1.6 * p.licht * exp(-0.5 * p.alter);               // gelandet: k\xFChlt aus und bleibt liegen
+    if (p.alter > S.leben * 0.5) { p.alter = -1.0; }
+  }
+  p.art = f32(s + (sorte << 6u));
+  ps[i] = p;
+}`;
+var ZEICHNEN = WGSL_GEMEINSAM + WGSL_BLICK + P_STRUCT + /* wgsl */
+`
+@group(0) @binding(0) var<uniform> B: Blick;
+@group(0) @binding(1) var<storage, read> slots: array<Slot>;
+@group(0) @binding(2) var<storage, read> ps: array<P>;
+struct V { @builtin(position) pos: vec4f, @location(0) uv: vec2f, @location(1) farbe: vec3f, @location(2) dichte: f32, @location(3) grund: vec3f, @location(4) lv: vec3f }
+
+@vertex fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> V {
+  var o: V;
+  let p = ps[ii];
+  if (p.alter < 0.0) { o.pos = vec4f(0.0, 0.0, -2.0, 1.0); return o; }
+  let S = slots[u32(p.art) & 63u];
+  let sorte = u32(p.art) >> 6u;
+  var lp = p.pos;
+  if ((u32(B.schalter) & 16u) != 0u) { lp.x += S.wind * min(S.t, 25.0) * lp.z / HD; }      // H\xF6henwind schert die Wolke
+  let w = lokalZuWelt(lp, vec3f(S.upx, S.upy, S.upz), S.skala, S.bodenH);
+  let clip = B.vp * vec4f(w, 1.0);
+  var rad = p.gr * S.skala;
+  if (sorte == 0u) { rad *= 1.0 + 0.05 * p.alter; }
+  let px = max(rad * B.brenn / max(clip.w, 1e-4), B.pix);
+  let ecke = vec2f(f32(vi & 1u), f32(vi >> 1u)) * 2.0 - 1.0;
+  o.pos = clip + vec4f(ecke * px / (B.aufl * 0.5) * clip.w, 0.0, 0.0);
+  o.uv = ecke;
+  // Sonnenrichtung im Bildraum, damit jeder Marker als kleine Kugel eine helle und eine dunkle Seite bekommt
+  let c2 = B.vp * vec4f(w + B.sonne * 0.01, 1.0);
+  let d2 = c2.xy / c2.w - clip.xy / clip.w;
+  let lz = dot(B.sonne, normalize(B.kam - w));
+  o.lv = vec3f(normalize(d2 * B.aufl + vec2f(1e-6)) * sqrt(max(1.0 - lz * lz, 0.0)), lz);
+  let tag = smoothstep(-0.1, 0.25, dot(normalize(w), B.sonne));
+  if (sorte == 0u) {
+    let alb = vec3f(S.fr, S.fg, S.fb);
+    o.farbe = alb * vec3f(1.0, 0.95, 0.88) * 2.1 * p.licht * tag;
+    o.grund = alb * vec3f(0.45, 0.58, 0.8) * 0.3 * (0.25 + 0.75 * p.licht) * (0.12 + tag) + glutFarbe(p.glut);
+    o.dichte = p.dichte;
+  } else {
+    o.farbe = vec3f(0.3, 0.26, 0.22) * 2.0 * tag;
+    o.grund = vec3f(0.02) + glutFarbe(p.glut);
+    o.dichte = 9.0;
+  }
+  return o;
+}
+@fragment fn fs(v: V) -> @location(0) vec4f {
+  let d2 = dot(v.uv, v.uv);
+  if (d2 > 1.0) { discard; }
+  // d\xFCnner Rand der Wolke: Marker l\xF6sen sich k\xF6rnig auf statt hart zu enden
+  let n = fract(sin(dot(floor(v.pos.xy), vec2f(12.9898, 78.233))) * 43758.5453);
+  if (v.dichte < 1.0 && n > v.dichte) { discard; }
+  let lam = dot(vec3f(v.uv, sqrt(1.0 - d2)), v.lv);
+  return vec4f(tonwert(v.farbe * (0.5 + 0.5 * clamp(lam * 0.8 + 0.35, 0.0, 1.0)) + v.grund), 1.0);
+}`;
+function erzeugeMarker(device, format, blickPuffer, slotPuffer, traeger, anzahl) {
+  const ps = device.createBuffer({ size: anzahl * 48, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  {
+    const f = new Float32Array(anzahl * 12);
+    for (let i = 0; i < anzahl; i++) {
+      f[i * 12 + 3] = -1;
+      f[i * 12 + 7] = 63;
+    }
+    device.queue.writeBuffer(ps, 0, f);
+  }
+  const pR = device.createComputePipeline({ layout: "auto", compute: { module: modul(device, RECHNEN, "marker-rechnen"), entryPoint: "main" } });
+  const mZ = modul(device, ZEICHNEN, "marker-zeichnen");
+  const pZ = device.createRenderPipeline({
+    layout: "auto",
+    vertex: { module: mZ, entryPoint: "vs" },
+    fragment: { module: mZ, entryPoint: "fs", targets: [{ format }] },
+    primitive: { topology: "triangle-strip" },
+    depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" }
+  });
+  const gR = device.createBindGroup({ layout: pR.getBindGroupLayout(0), entries: [
+    { binding: 0, resource: { buffer: blickPuffer } },
+    { binding: 1, resource: { buffer: slotPuffer } },
+    { binding: 2, resource: { buffer: ps } },
+    { binding: 3, resource: traeger.feldSicht },
+    { binding: 4, resource: traeger.samp }
+  ] });
+  const gZ = device.createBindGroup({ layout: pZ.getBindGroupLayout(0), entries: [
+    { binding: 0, resource: { buffer: blickPuffer } },
+    { binding: 1, resource: { buffer: slotPuffer } },
+    { binding: 2, resource: { buffer: ps } }
+  ] });
+  return {
+    anzahl,
+    schritt(enc) {
+      const p = enc.beginComputePass();
+      p.setPipeline(pR);
+      p.setBindGroup(0, gR);
+      p.dispatchWorkgroups(Math.ceil(anzahl / 64));
+      p.end();
+    },
+    zeichne(pass) {
+      pass.setPipeline(pZ);
+      pass.setBindGroup(0, gZ);
+      pass.draw(4, anzahl);
+    },
+    freigeben() {
+      ps.destroy();
+    }
+  };
+}
+
+// src/sichtbar/boden.js
+var KW = 1024;
+var KH = 512;
+var VOLLBILD = (
+  /* wgsl */
+  `
+struct VB { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VB {
+  var o: VB; let p = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+  o.pos = vec4f(p * 2.0 - 1.0, 0.0, 1.0); o.uv = vec2f(p.x, 1.0 - p.y); return o;
+}
+fn richtung(uv: vec2f) -> vec3f {
+  let lon = (uv.x - 0.5) * 2.0 * PI; let lat = (0.5 - uv.y) * PI;
+  return vec3f(cos(lat) * cos(lon), sin(lat), cos(lat) * sin(lon));
+}
+fn h3(p: vec3i) -> f32 { return f32(pcg((u32(p.x) * 73856093u) ^ (u32(p.y) * 19349663u) ^ (u32(p.z) * 83492791u)) >> 8u) / 16777216.0; }
+fn rausch(p: vec3f) -> f32 {
+  let i = vec3i(floor(p)); let f = fract(p); let u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h3(i), h3(i + vec3i(1, 0, 0)), u.x), mix(h3(i + vec3i(0, 1, 0)), h3(i + vec3i(1, 1, 0)), u.x), u.y),
+             mix(mix(h3(i + vec3i(0, 0, 1)), h3(i + vec3i(1, 0, 1)), u.x), mix(h3(i + vec3i(0, 1, 1)), h3(i + vec3i(1, 1, 1)), u.x), u.y), u.z);
+}
+fn fbm(p: vec3f) -> f32 { var a = 0.5; var s = 0.0; var q = p; for (var k = 0; k < 7; k++) { s += a * (rausch(q) * 2.0 - 1.0); q = q * 2.03 + vec3f(11.7); a *= 0.5; } return s; }
+`
+);
+var BACKEN = WGSL_GEMEINSAM + VOLLBILD + /* wgsl */
+`
+@fragment fn fs(v: VB) -> @location(0) vec4f {
+  let d = richtung(v.uv);
+  let h = fbm(d * 1.7 + vec3f(3.1)) * 0.022 + 0.004 + abs(fbm(d * 6.0)) * 0.004;
+  return vec4f(h, 0.0, 0.0, 0.0);
+}`;
+var STEMPEL = WGSL_GEMEINSAM + VOLLBILD + /* wgsl */
+`
+struct St { zentrum: vec3f, radius: f32, tiefe: f32, rand: f32, hitze: f32, russ: f32, art: f32, abkling: f32, basis: f32, seed: f32 }
+@group(0) @binding(0) var<uniform> S: St;
+@group(0) @binding(1) var karte: texture_2d<f32>;
+@fragment fn fs(v: VB) -> @location(0) vec4f {
+  var k = textureLoad(karte, vec2i(v.pos.xy), 0);
+  k.g *= S.abkling;                                        // alte Glut ist seit dem letzten Stempel abgek\xFChlt
+  let d = richtung(v.uv);
+  let x = acos(clamp(dot(d, S.zentrum), -1.0, 1.0)) / S.radius;
+  if (x > 14.0) { return k; }
+  let strahl = 0.55 + 0.9 * rausch(normalize(d - S.zentrum + vec3f(1e-5)) * 9.0 + S.seed);    // Auswurfstrahlen
+  if (S.art < 0.5) {
+    // Krater: Sch\xFCssel bis zum Rand, au\xDFen Auswurfdecke, Dicke \u221D r\u207B\xB3 (McGetchin 1973)
+    let innen = S.basis - S.tiefe + (S.tiefe + S.rand) * x * x;
+    let aussen = k.r + S.rand * pow(max(x, 1.0), -3.0) * strahl;
+    k.r = mix(innen, aussen, smoothstep(0.92, 1.06, x));
+    k.g += S.hitze * exp(-2.2 * x * x);
+    k.b = clamp(k.b + S.russ * strahl * exp(-0.55 * x), 0.0, 1.0);
+  } else if (S.art < 1.5) {
+    // Schichtvulkan: nach innen gew\xF6lbte Flanke (wie src/rocky/shader/volc.js), Schlot als Sch\xFCssel
+    if (x < 1.0) {
+      let fl = (exp(-3.0 * x) - exp(-3.0)) / (1.0 - exp(-3.0));
+      k.r = max(k.r, S.basis) + S.rand * fl - S.tiefe * (1.0 - smoothstep(0.0, 0.14, x));
+    }
+    k.g += S.hitze * exp(-60.0 * x * x);
+    k.b = clamp(k.b + S.russ * exp(-3.0 * x * x), 0.0, 1.0);
+  } else {
+    k.b = clamp(k.b + S.russ * exp(-x * x) * strahl, 0.0, 1.0);
+  }
+  return k;
+}`;
+var PLANET = WGSL_GEMEINSAM + WGSL_BLICK + /* wgsl */
+`
+@group(0) @binding(0) var<uniform> B: Blick;
+@group(0) @binding(1) var karte: texture_2d<f32>;
+@group(0) @binding(2) var samp: sampler;
+struct V { @builtin(position) pos: vec4f, @location(0) d: vec3f }
+fn kuv(d: vec3f) -> vec2f { return vec2f(atan2(d.z, d.x) / (2.0 * PI) + 0.5, 0.5 - asin(clamp(d.y, -1.0, 1.0)) / PI); }
+@vertex fn vs(@location(0) d: vec3f) -> V {
+  var o: V; let k = textureSampleLevel(karte, samp, kuv(d), 0.0);
+  o.pos = B.vp * vec4f(d * (1.0 + max(k.r, 0.0)), 1.0); o.d = d; return o;
+}
+@fragment fn fs(v: V) -> @location(0) vec4f {
+  let d = normalize(v.d); let uv = kuv(d);
+  let k = textureSampleLevel(karte, samp, uv, 0.0);
+  let e = vec2f(1.0 / ${KW}.0, 1.0 / ${KH}.0);
+  let cl = max(sqrt(1.0 - d.y * d.y), 0.05);
+  let ost = normalize(vec3f(-d.z, 0.0, d.x) + vec3f(1e-6, 0.0, 0.0)); let nord = cross(ost, d);
+  let hO = textureSampleLevel(karte, samp, uv + vec2f(e.x, 0.0), 0.0).r - textureSampleLevel(karte, samp, uv - vec2f(e.x, 0.0), 0.0).r;
+  let hN = textureSampleLevel(karte, samp, uv - vec2f(0.0, e.y), 0.0).r - textureSampleLevel(karte, samp, uv + vec2f(0.0, e.y), 0.0).r;
+  let land = k.r > 0.0;
+  var n = d;
+  if (land) { n = normalize(d - ost * hO / (2.0 * e.x * 2.0 * PI * cl) - nord * hN / (2.0 * e.y * PI)); }
+  let L = B.sonne; let ndl = max(dot(n, L), 0.0);
+  let blick = normalize(B.kam - d);
+  var alb: vec3f;
+  if (land) {
+    let h = k.r;
+    alb = mix(vec3f(0.62, 0.55, 0.38), vec3f(0.16, 0.3, 0.1), smoothstep(0.0003, 0.0025, h));
+    alb = mix(alb, vec3f(0.36, 0.3, 0.22), smoothstep(0.008, 0.016, h));
+    alb = mix(alb, vec3f(0.9), smoothstep(0.02, 0.026, h) * (1.0 - smoothstep(0.0, 0.5, k.g)));
+  } else {
+    alb = mix(vec3f(0.02, 0.1, 0.22), vec3f(0.04, 0.22, 0.34), smoothstep(-0.006, 0.0, k.r));
+  }
+  alb = mix(alb, vec3f(0.06, 0.055, 0.05), k.b * 0.85);     // Ru\xDF und Asche
+  var c = alb * (vec3f(1.0, 0.96, 0.9) * 2.1 * ndl + vec3f(0.5, 0.62, 0.8) * 0.05);
+  if (!land) { c += vec3f(1.0, 0.9, 0.7) * 2.0 * pow(max(dot(reflect(-L, n), blick), 0.0), 60.0); }
+  // Glut k\xFChlt seit dem letzten Stempel weiter ab (\u03C4 = 25 s)
+  c += glutFarbe(k.g * exp(-(B.zeit - B.tStempel) / 25.0)) * select(0.25, 1.0, land);
+  // Dunstsaum am Rand
+  let rand = pow(1.0 - max(dot(d, blick), 0.0), 3.0);
+  c = mix(c, vec3f(0.35, 0.55, 0.95) * (0.1 + 1.6 * max(dot(d, L) + 0.15, 0.0)), rand * 0.55);
+  return vec4f(tonwert(c), 1.0);
+}`;
+async function erzeugeBoden(device, format, blickPuffer, netz = 128) {
+  const tex = () => device.createTexture({ size: [KW, KH], format: "rgba16float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
+  const karte = [tex(), tex()];
+  let akt = 0;
+  const samp = device.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "clamp-to-edge" });
+  const rp = (code, name, ziel, tiefe) => {
+    const m = modul(device, code, name);
+    return device.createRenderPipeline({ layout: "auto", vertex: { module: m, entryPoint: "vs", buffers: tiefe ? [{ arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" }] }] : [] }, fragment: { module: m, entryPoint: "fs", targets: [{ format: ziel }] }, primitive: { topology: "triangle-list", cullMode: "none" }, ...tiefe ? { depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" } } : {} });
+  };
+  const pBacken = rp(BACKEN, "boden-backen", "rgba16float", false);
+  const pStempel = rp(STEMPEL, "boden-stempel", "rgba16float", false);
+  const pPlanet = rp(PLANET, "boden-planet", format, true);
+  const lauf = (pipe, ziel, gruppe) => {
+    const enc = device.createCommandEncoder();
+    const p = enc.beginRenderPass({ colorAttachments: [{ view: ziel.createView(), loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 0] }] });
+    p.setPipeline(pipe);
+    if (gruppe) p.setBindGroup(0, gruppe);
+    p.draw(3);
+    p.end();
+    device.queue.submit([enc.finish()]);
+  };
+  lauf(pBacken, karte[0]);
+  const hoehen = new Float32Array(KW * KH);
+  {
+    const b = device.createBuffer({ size: KW * KH * 8, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    const enc = device.createCommandEncoder();
+    enc.copyTextureToBuffer({ texture: karte[0] }, { buffer: b, bytesPerRow: KW * 8 }, [KW, KH]);
+    device.queue.submit([enc.finish()]);
+    await b.mapAsync(GPUMapMode.READ);
+    const h = new Uint16Array(b.getMappedRange());
+    for (let i = 0; i < KW * KH; i++) hoehen[i] = halb(h[i * 4]);
+    b.unmap();
+    b.destroy();
+  }
+  const N = netz, ecken = new Float32Array(6 * (N + 1) * (N + 1) * 3), idx = new Uint32Array(6 * N * N * 6);
+  let e = 0, q = 0;
+  for (let f = 0; f < 6; f++) {
+    const basis = e / 3;
+    for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
+      const a = Math.tan((i / N - 0.5) * Math.PI / 2), b = Math.tan((j / N - 0.5) * Math.PI / 2);
+      const v = [[1, b, -a], [-1, b, a], [a, 1, -b], [a, -1, b], [a, b, 1], [-a, b, -1]][f];
+      const l = Math.hypot(...v);
+      ecken[e++] = v[0] / l;
+      ecken[e++] = v[1] / l;
+      ecken[e++] = v[2] / l;
+    }
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const p = basis + j * (N + 1) + i;
+      idx.set([p, p + N + 1, p + 1, p + 1, p + N + 1, p + N + 2], q);
+      q += 6;
+    }
+  }
+  const vb = device.createBuffer({ size: ecken.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(vb, 0, ecken);
+  const ib = device.createBuffer({ size: idx.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(ib, 0, idx);
+  const stPuffer = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const gPlanet = karte.map((k) => device.createBindGroup({ layout: pPlanet.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: blickPuffer } }, { binding: 1, resource: k.createView() }, { binding: 2, resource: samp }] }));
+  const gStempel = karte.map((k) => device.createBindGroup({ layout: pStempel.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: stPuffer } }, { binding: 1, resource: k.createView() }] }));
+  let tStempel = 0, jetzt = 0, anzahl = 0;
+  return {
+    an: true,
+    get tStempel() {
+      return tStempel;
+    },
+    get stempelZahl() {
+      return anzahl;
+    },
+    setzeZeit(t) {
+      jetzt = t;
+    },
+    hoehe(d) {
+      const u = (Math.atan2(d[2], d[0]) / (2 * Math.PI) + 0.5) * KW, v = (0.5 - Math.asin(Math.max(-1, Math.min(1, d[1]))) / Math.PI) * KH;
+      return Math.max(hoehen[Math.min(KH - 1, Math.max(0, v | 0)) * KW + ((u | 0) % KW + KW) % KW], 0);
+    },
+    // Narbe in die Karte schreiben. Ein Durchlauf über die Karte, nur wenn ein Ereignis beginnt oder endet.
+    stempel(o) {
+      if (!this.an) return;
+      device.queue.writeBuffer(stPuffer, 0, new Float32Array([...o.zentrum, o.radius, o.tiefe, o.rand, o.hitze, o.russ, o.art, Math.exp(-(jetzt - tStempel) / 25), o.basis, Math.random() * 50]));
+      lauf(pStempel, karte[1 - akt], gStempel[akt]);
+      akt = 1 - akt;
+      tStempel = jetzt;
+      anzahl++;
+    },
+    zeichne(pass) {
+      pass.setPipeline(pPlanet);
+      pass.setBindGroup(0, gPlanet[akt]);
+      pass.setVertexBuffer(0, vb);
+      pass.setIndexBuffer(ib, "uint32");
+      pass.drawIndexed(idx.length);
+    }
+  };
+}
+
+// src/sichtbar/schnitt.js
+var CODE = WGSL_GEMEINSAM + /* wgsl */
+`
+@group(0) @binding(0) var feld: texture_2d_array<f32>;
+@group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var<uniform> U: vec4f;
+struct V { @builtin(position) pos: vec4f, @location(0) uv: vec2f }
+@vertex fn vs(@builtin(vertex_index) i: u32) -> V {
+  var o: V; let p = vec2f(f32(i & 1u), f32(i >> 1u));
+  o.pos = vec4f(-0.98 + p.x * 0.5 * U.y, -0.98 + p.y * 1.0, 0.0, 1.0); o.uv = vec2f(p.x, p.y); return o;
+}
+@fragment fn fs(v: V) -> @location(0) vec4f {
+  let f = textureSampleLevel(feld, samp, v.uv, u32(U.x), 0.0);
+  let c = vec3f(0.02) + vec3f(0.5) * clamp(f.z, 0.0, 1.5) + vec3f(1.0, 0.25, 0.0) * clamp(f.w, 0.0, 2.0) + vec3f(0.0, 0.25, 0.6) * clamp(f.y, 0.0, 2.0) + vec3f(0.0, 0.5, 0.1) * clamp(-f.y, 0.0, 2.0);
+  return vec4f(pow(clamp(c, vec3f(0.0), vec3f(1.0)), vec3f(0.6)), 1.0);
+}`;
+function erzeugeSchnitt(device, format, traeger) {
+  const m = modul(device, CODE, "schnitt");
+  const p = device.createRenderPipeline({ layout: "auto", vertex: { module: m, entryPoint: "vs" }, fragment: { module: m, entryPoint: "fs", targets: [{ format }] }, primitive: { topology: "triangle-strip" }, depthStencil: { format: "depth24plus", depthWriteEnabled: false, depthCompare: "always" } });
+  const u = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const g = device.createBindGroup({ layout: p.getBindGroupLayout(0), entries: [{ binding: 0, resource: traeger.feldSicht }, { binding: 1, resource: traeger.samp }, { binding: 2, resource: { buffer: u } }] });
+  return { zeichne(pass, slot, seite = 1) {
+    device.queue.writeBuffer(u, 0, new Float32Array([slot, seite, 0, 0]));
+    pass.setPipeline(p);
+    pass.setBindGroup(0, g);
+    pass.draw(4);
+  } };
+}
+
+// src/bedienung.js
+function baueBedienung(api, BAUSTEINE2) {
+  const { Z, schalter } = api;
+  const el = (tag, attrs = {}, ...kinder) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+      else if (k === "text") e.textContent = v;
+      else e.setAttribute(k, v);
+    }
+    e.append(...kinder);
+    return e;
+  };
+  const feld = document.getElementById("bedienung");
+  const zuende = (name, opt) => api.zuende(name, opt);
+  feld.append(
+    el(
+      "div",
+      { class: "reihe" },
+      el("button", { text: "Vulkan", onclick: () => zuende("vulkan") }),
+      el("button", { text: "Atombombe", onclick: () => zuende("bombe") }),
+      el("button", { text: "Asteroid", onclick: () => zuende("einschlag") }),
+      el("button", { text: "8 auf einmal", onclick: () => api.stresstest() })
+    ),
+    el(
+      "div",
+      { class: "reihe" },
+      el("button", { text: "Zum Ereignis", onclick: () => {
+        if (api.letzter) api.ansicht(api.letzter.ort, api.letzter.skala);
+      } }),
+      el("button", { text: "Ganzer Planet", onclick: () => api.ansicht(null) }),
+      el("button", { text: "Pause", onclick: (e) => {
+        Z.pause = !Z.pause;
+        e.target.textContent = Z.pause ? "Weiter" : "Pause";
+      } }),
+      el("button", { text: "Alles aus", onclick: () => api.ereignisse.alleSchlafen() })
+    )
+  );
+  const regler = (name, min, max, wert, schritt, setze, fmt = (v) => v) => {
+    const zahl = el("span", { text: fmt(wert) });
+    feld.append(el("label", { class: "regler" }, el("span", { text: name }), el("input", { type: "range", min, max, step: schritt, value: wert, oninput: (e) => {
+      setze(+e.target.value);
+      zahl.textContent = fmt(+e.target.value);
+    } }), zahl));
+  };
+  regler("Marker", 50, 2e3, api.marker.anzahl / 1e3, 50, (v) => api.markerNeu(v * 1e3), (v) => v + "k");
+  regler("Gr\xF6\xDFe", 0.3, 2.5, 1, 0.1, (v) => {
+    Z.groesse = v;
+  }, (v) => "\xD7" + v);
+  regler("Tempo", 0.2, 3, Z.tempo, 0.1, (v) => {
+    Z.tempo = v;
+  }, (v) => "\xD7" + v);
+  regler("L\xF6ser-Schritte", 2, 40, api.traeger.iterationen, 1, (v) => {
+    api.traeger.iterationen = v;
+  });
+  const liste = el("details", {}, el("summary", { text: "Bausteine an/aus" }));
+  for (const b of BAUSTEINE2) {
+    liste.append(el(
+      "label",
+      { class: "schalter", title: b.text },
+      el("input", { type: "checkbox", ...schalter[b.schluessel] ? { checked: "" } : {}, onchange: (e) => {
+        schalter[b.schluessel] = e.target.checked;
+      } }),
+      el("span", {}, el("b", { text: b.name }), el("small", { text: " " + b.text }))
+    ));
+  }
+  feld.append(liste);
+  const c = document.getElementById("bild"), zeiger = /* @__PURE__ */ new Map();
+  let abstand = 0;
+  c.addEventListener("pointerdown", (e) => {
+    c.setPointerCapture(e.pointerId);
+    zeiger.set(e.pointerId, [e.clientX, e.clientY]);
+  });
+  c.addEventListener("pointerup", (e) => {
+    zeiger.delete(e.pointerId);
+    abstand = 0;
+  });
+  c.addEventListener("pointercancel", (e) => {
+    zeiger.delete(e.pointerId);
+    abstand = 0;
+  });
+  c.addEventListener("pointermove", (e) => {
+    if (!zeiger.has(e.pointerId)) return;
+    const alt = zeiger.get(e.pointerId);
+    zeiger.set(e.pointerId, [e.clientX, e.clientY]);
+    const k = Z.kam, nah = Math.hypot(...k.ziel) > 0.5;
+    if (zeiger.size === 1) {
+      k.az += (e.clientX - alt[0]) * 6e-3 * (nah ? -1 : 1);
+      k.el = Math.max(nah ? -0.2 : -1.5, Math.min(1.5, k.el + (e.clientY - alt[1]) * 6e-3));
+    } else if (zeiger.size === 2) {
+      const [a, b] = [...zeiger.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (abstand > 0) k.dist = grenze(k.dist * abstand / d, nah);
+      abstand = d;
+    }
+  });
+  c.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const k = Z.kam;
+    k.dist = grenze(k.dist * Math.exp(e.deltaY * 1e-3), Math.hypot(...k.ziel) > 0.5);
+  }, { passive: false });
+  const grenze = (d, nah) => Math.max(nah ? 0.03 : 1.25, Math.min(nah ? 3 : 8, d));
+}
+
+// src/haupt.js
+var qs = new URLSearchParams(location.search);
+var TEST = qs.has("test");
+var canvas = document.getElementById("bild");
+var melde = (t) => {
+  document.getElementById("status").textContent = t;
+};
+async function start() {
+  const { device, format } = await geraetHolen();
+  const ctx = canvas.getContext("webgpu");
+  ctx.configure({ device, format, alphaMode: "opaque" });
+  const schalter = schalterAusUrl(qs);
+  const blickPuffer = device.createBuffer({ size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const blick = new Float32Array(32);
+  const ereignisse = erzeugeEreignisse(device);
+  const traeger = erzeugeTraegerAchse(device, ereignisse.puffer);
+  const boden = await erzeugeBoden(device, format, blickPuffer, +(qs.get("netz") || 128));
+  let marker = erzeugeMarker(device, format, blickPuffer, ereignisse.puffer, traeger, +(qs.get("marker") || 3e5));
+  const schnitt = erzeugeSchnitt(device, format, traeger);
+  ereignisse.verbinde(traeger, boden);
+  const Z = {
+    zeit: 0,
+    bild: 0,
+    tempo: +(qs.get("tempo") || 1),
+    groesse: 1,
+    pause: false,
+    fps: 0,
+    kam: { az: 0.6, el: 0.35, dist: 3.2, ziel: [0, 0, 0] },
+    sonne: norm([1, 0.45, 0.55])
+  };
+  let tiefe = null, B = 0, Hh = 0;
+  const groesse = () => {
+    const dpr = TEST ? 1 : Math.min(devicePixelRatio || 1, 2);
+    const w = Math.max(2, Math.round(canvas.clientWidth * dpr)), h = Math.max(2, Math.round(canvas.clientHeight * dpr));
+    if (w === B && h === Hh) return;
+    B = w;
+    Hh = h;
+    canvas.width = w;
+    canvas.height = h;
+    tiefe?.destroy();
+    tiefe = device.createTexture({ size: [w, h], format: "depth24plus", usage: GPUTextureUsage.RENDER_ATTACHMENT });
+  };
+  const mitte = () => len(Z.kam.ziel) > 0.5 ? norm(Z.kam.ziel) : norm(auge());
+  function auge() {
+    const k = Z.kam, z = k.ziel;
+    if (len(z) < 0.5) return [k.dist * Math.cos(k.el) * Math.cos(k.az), k.dist * Math.sin(k.el), k.dist * Math.cos(k.el) * Math.sin(k.az)];
+    const up = norm(z), a = Math.abs(up[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0], e1 = norm(kreuz(a, up)), e2 = kreuz(up, e1);
+    const c = Math.cos(k.el), s = Math.sin(k.el);
+    return [0, 1, 2].map((i) => z[i] + k.dist * (c * Math.cos(k.az) * e1[i] + c * Math.sin(k.az) * e2[i] + s * up[i]));
+  }
+  function blickSchreiben() {
+    const k = Z.kam, e = auge(), up = len(k.ziel) > 0.5 ? norm(k.ziel) : [0, 1, 0];
+    const fov = 0.7, f = 1 / Math.tan(fov / 2), nah = 5e-3, fern = 30;
+    const P = [f / (B / Hh), 0, 0, 0, 0, f, 0, 0, 0, 0, fern / (nah - fern), -1, 0, 0, fern * nah / (nah - fern), 0];
+    blick.set(mal(P, schau(e, k.ziel, up)), 0);
+    blick.set(e, 16);
+    blick[19] = Z.zeit;
+    blick.set(Z.sonne, 20);
+    blick[23] = Z.dt || 0;
+    blick[24] = B;
+    blick[25] = Hh;
+    blick[26] = Z.bild;
+    blick[27] = (schalter.turbulenz ? 1 : 0) | (schalter.schatten ? 2 : 0) | (schalter.ballistik ? 4 : 0) | (schalter.staub ? 8 : 0) | (schalter.wind ? 16 : 0);
+    blick[28] = boden.tStempel;
+    blick[29] = TEST ? 1 : 1.3;
+    blick[30] = marker.anzahl;
+    blick[31] = Hh / 2 * f;
+    device.queue.writeBuffer(blickPuffer, 0, blick);
+  }
+  function schritt() {
+    const dt = 1 / 60 * Z.tempo;
+    Z.dt = dt;
+    Z.zeit += dt;
+    Z.bild++;
+    boden.an = schalter.narben;
+    boden.setzeZeit(Z.zeit);
+    ereignisse.schritt(dt);
+    blickSchreiben();
+    const h = ereignisse.hoechster();
+    if (h >= 0) {
+      const enc = device.createCommandEncoder();
+      if (schalter.traeger) traeger.schritt(enc, h);
+      if (schalter.marker) marker.schritt(enc);
+      device.queue.submit([enc.finish()]);
+    }
+    ereignisse.nachSchritt();
+  }
+  function zeichne(zielSicht) {
+    blickSchreiben();
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginRenderPass({
+      colorAttachments: [{ view: zielSicht, loadOp: "clear", storeOp: "store", clearValue: [5e-3, 6e-3, 0.012, 1] }],
+      depthStencilAttachment: { view: tiefe.createView(), depthLoadOp: "clear", depthStoreOp: "store", depthClearValue: 1 }
+    });
+    boden.zeichne(pass);
+    if (schalter.marker) marker.zeichne(pass);
+    if (schalter.schnitt) schnitt.zeichne(pass, Math.max(0, ereignisse.hoechster()));
+    pass.end();
+    device.queue.submit([enc.finish()]);
+  }
+  const zuende = (name, opt = {}) => {
+    const up = opt.up || mitte();
+    const s = ereignisse.starte(name, up, { groesse: Z.groesse, ...opt });
+    api.letzter = { ort: up, skala: ereignisse.daten[s * SLOT_N + F.skala] };
+    return s;
+  };
+  const api = {
+    letzter: null,
+    Z,
+    schalter,
+    ereignisse,
+    traeger,
+    boden,
+    device,
+    zuende,
+    get marker() {
+      return marker;
+    },
+    skala: (s) => ereignisse.daten[s * SLOT_N + F.skala],
+    markerNeu(n2) {
+      marker.freigeben();
+      marker = erzeugeMarker(device, format, blickPuffer, ereignisse.puffer, traeger, n2);
+    },
+    // Kamera an ein Ereignis setzen: Blick auf halbe Wolkenhöhe, Abstand passend zur Ereignisgröße
+    ansicht(ort, skala = 0.05) {
+      Z.kam.ziel = ort ? ort.map((x) => x * (1 + 1.5 * skala)) : [0, 0, 0];
+      if (ort) {
+        Z.kam.dist = 5.2 * skala;
+        Z.kam.el = 0.12;
+      } else {
+        Z.kam.dist = 3.2;
+      }
+    },
+    stresstest() {
+      for (let k = 0; k < SLOTS; k++) {
+        const a = k * 2.399, y = 0.75 - 1.5 * (k + 0.5) / SLOTS, r = Math.sqrt(1 - y * y);
+        zuende(["vulkan", "bombe", "einschlag"][k % 3], { up: [r * Math.cos(a), y, r * Math.sin(a)], groesse: Z.groesse * (k % 3 === 2 ? 0.6 : 1) });
+      }
+    }
+  };
+  window.__E = {
+    bereit: true,
+    api,
+    schritte(n2) {
+      for (let i = 0; i < n2; i++) schritt();
+    },
+    async fertig() {
+      await device.queue.onSubmittedWorkDone();
+    },
+    async bild() {
+      groesse();
+      const t = device.createTexture({ size: [B, Hh], format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+      zeichne(t.createView());
+      const zeile = Math.ceil(B * 4 / 256) * 256;
+      const b = device.createBuffer({ size: zeile * Hh, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      const enc = device.createCommandEncoder();
+      enc.copyTextureToBuffer({ texture: t }, { buffer: b, bytesPerRow: zeile }, [B, Hh]);
+      device.queue.submit([enc.finish()]);
+      await b.mapAsync(GPUMapMode.READ);
+      const roh = new Uint8Array(b.getMappedRange()), px = new Uint8ClampedArray(B * Hh * 4), bgr = format.startsWith("bgra");
+      for (let y = 0; y < Hh; y++) for (let x = 0; x < B; x++) {
+        const i = y * zeile + x * 4, o = (y * B + x) * 4;
+        px[o] = roh[i + (bgr ? 2 : 0)];
+        px[o + 1] = roh[i + 1];
+        px[o + 2] = roh[i + (bgr ? 0 : 2)];
+        px[o + 3] = 255;
+      }
+      b.unmap();
+      b.destroy();
+      t.destroy();
+      const c = document.createElement("canvas");
+      c.width = B;
+      c.height = Hh;
+      c.getContext("2d").putImageData(new ImageData(px, B, Hh), 0, 0);
+      return c.toDataURL("image/jpeg", 0.9);
+    },
+    async feld(s) {
+      return Array.from(await traeger.lesen(s));
+    },
+    // Zeit je Schritt in ms (Mittel über n Schritte, wartet auf die GPU)
+    async messen(n2) {
+      await device.queue.onSubmittedWorkDone();
+      const t0 = performance.now();
+      for (let i = 0; i < n2; i++) {
+        schritt();
+        if (i % 4 === 3) await device.queue.onSubmittedWorkDone();
+      }
+      await device.queue.onSubmittedWorkDone();
+      return (performance.now() - t0) / n2;
+    },
+    gitter: { NR, NZ, SLOTS }
+  };
+  groesse();
+  if (TEST) {
+    melde("Pr\xFCfmodus");
+    return;
+  }
+  baueBedienung(api, BAUSTEINE);
+  zuende("vulkan", { up: norm([0.46, 0.63, 0.63]) });
+  api.ansicht(api.letzter.ort, api.letzter.skala);
+  Z.kam.az = 2.2;
+  let letzte = performance.now(), rest = 0, n = 0, summe = 0;
+  const rahmen = (jetzt) => {
+    const d = Math.min(jetzt - letzte, 100);
+    letzte = jetzt;
+    groesse();
+    if (!Z.pause) {
+      rest += d;
+      let k = 0;
+      while (rest >= 1e3 / 60 - 0.5 && k < 2) {
+        schritt();
+        rest -= 1e3 / 60;
+        k++;
+      }
+      if (rest > 50) rest = 0;
+    }
+    zeichne(ctx.getCurrentTexture().createView());
+    summe += d;
+    n++;
+    if (n === 30) {
+      Z.fps = 3e4 / summe;
+      n = 0;
+      summe = 0;
+      melde(`${Z.fps.toFixed(0)} B/s \xB7 ${ereignisse.wach()} wach \xB7 ${(marker.anzahl / 1e3).toFixed(0)}k Marker \xB7 Tr\xE4ger ${ereignisse.wach() * NR * NZ} Zellen`);
+    }
+    requestAnimationFrame(rahmen);
+  };
+  requestAnimationFrame(rahmen);
+}
+var len = (a) => Math.hypot(a[0], a[1], a[2]);
+var norm = (a) => {
+  const l = len(a) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
+var kreuz = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+var punkt = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+function schau(e, z, up) {
+  const f = norm([z[0] - e[0], z[1] - e[1], z[2] - e[2]]), s = norm(kreuz(f, up)), u = kreuz(s, f);
+  return [s[0], u[0], -f[0], 0, s[1], u[1], -f[1], 0, s[2], u[2], -f[2], 0, -punkt(s, e), -punkt(u, e), punkt(f, e), 1];
+}
+function mal(a, b) {
+  const o = new Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    let s = 0;
+    for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+    o[c * 4 + r] = s;
+  }
+  return o;
+}
+start().catch((e) => {
+  melde("Fehler: " + e.message);
+  console.error(e);
+  window.__E = { fehler: String(e) };
+});
+</script>

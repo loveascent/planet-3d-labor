@@ -1,0 +1,12 @@
+{
+  "name": "ereignis-labor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bauen": "node werkzeug/bauen.mjs",
+    "raster": "node test/raster.mjs",
+    "physik": "node test/physik.mjs",
+    "kosten": "node test/kosten.mjs"
+  },
+  "devDependencies": { "esbuild": "^0.25.0" }
+}

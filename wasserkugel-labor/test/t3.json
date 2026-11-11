@@ -1,0 +1,4 @@
+{"q":"?test&tier=potato&scene=milchtee","w":800,"h":560,"steps":[
+ {"eval":"__L.run(1)"},
+ {"eval":"Promise.all([__L.px('hdr',.5,.5),__L.px('hdr',.1,.1),__L.px('dRaw',.5,.5),__L.px('dF',.5,.5),__L.px('abs',.5,.5),__L.px('spl',.5,.5)])"}
+]}

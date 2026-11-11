@@ -1,0 +1,4 @@
+{"q":"?test&tier=potato&scene=milchtee","w":800,"h":560,"steps":[
+ {"eval":"__L.run(30)"},{"shot":"/tmp/claude-0/o3.png"},
+ {"eval":"__L.run(40)"},{"eval":"__L.stats()"},{"shot":"/tmp/claude-0/o4.png"}
+]}

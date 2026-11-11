@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wasserkugel-Labor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Manrope:wght@500;600;700&display=swap">
+<style>
+/* Ein dunkler Laborraum: Bild randlos, Bedienung als Glasblatt unten (Daumenreichweite), Akzent = Bernstein des Tees */
+:root{color-scheme:dark;--bg:#07090c;--glass:rgba(16,20,26,.78);--line:rgba(255,255,255,.10);--tx:#eef2f5;--mu:#93a0ad;--ac:#f0a64a;--ac2:#ffd59a;--on:rgba(240,166,74,.18);
+  --f-ui:"Manrope",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--f-num:"JetBrains Mono",ui-monospace,Menlo,monospace}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font:14px/1.35 var(--f-ui);overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+#hud{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));left:max(12px,env(safe-area-inset-left,0px));display:flex;gap:6px;align-items:center;font:12px var(--f-num);color:var(--mu);background:var(--glass);border:1px solid var(--line);border-radius:999px;padding:5px 10px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+#hud b{color:var(--ac2);font-weight:600}
+#sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:460px;background:var(--glass);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);border:1px solid var(--line);border-bottom:0;border-radius:20px 20px 0 0;padding:6px max(14px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(14px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:10px;transition:transform .28s cubic-bezier(.2,.8,.2,1)}
+@media (min-width:900px){#sheet{left:auto;right:16px;bottom:16px;border-radius:20px;border-bottom:1px solid var(--line)}}
+#sheet{max-height:min(78dvh,760px);overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y}
+#sheet.low{max-height:none;overflow:hidden;transform:translateY(calc(100% - 196px - env(safe-area-inset-bottom,0px)))}
+.h{font:700 11px var(--f-ui);letter-spacing:.09em;text-transform:uppercase;color:var(--mu);margin-top:4px}
+.ib{width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:transparent;color:var(--mu);font:600 12px var(--f-ui);padding:0;cursor:pointer}
+.inf{grid-column:1/-1;font:11.5px/1.45 var(--f-num);color:#cfd8e3;background:rgba(0,0,0,.28);border-radius:8px;padding:6px 8px;margin:-2px 0 4px}
+.seg.q{grid-template-columns:repeat(4,1fr)}
+#grab{width:64px;height:6px;margin:6px 0 4px}
+#grab{align-self:center;width:44px;height:5px;border-radius:3px;background:rgba(255,255,255,.25);border:0;padding:0;margin:4px 0 2px;cursor:pointer}
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -4px;padding:0 4px}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;font:600 13px var(--f-ui);color:var(--tx);background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:999px;padding:8px 13px;cursor:pointer;white-space:nowrap}
+.chip.on{background:var(--on);border-color:var(--ac);color:var(--ac2)}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:12px;padding:3px;gap:3px}
+.seg button{font:600 12.5px var(--f-ui);color:var(--mu);background:transparent;border:0;border-radius:9px;padding:8px 4px;cursor:pointer;line-height:1.15}
+.seg button small{display:block;font-weight:500;font-size:10.5px;opacity:.75}
+.seg button.on{background:rgba(255,255,255,.1);color:var(--tx)}
+.row{display:flex;gap:8px}
+.act{flex:1;font:600 13.5px var(--f-ui);color:#1c1206;background:var(--ac);border:0;border-radius:12px;padding:11px 10px;cursor:pointer}
+.act.ghost{flex:0 0 auto;color:var(--tx);background:rgba(255,255,255,.07);border:1px solid var(--line)}
+.sl{display:grid;grid-template-columns:92px minmax(0,1fr) 46px 26px;align-items:center;gap:8px}
+.sl label{color:var(--mu);font-size:12.5px}
+.sl output{font:12px var(--f-num);color:var(--ac2);text-align:right}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:transparent}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(90deg,var(--ac) var(--p,50%),rgba(255,255,255,.14) var(--p,50%))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:#fff;margin-top:-9px;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:rgba(255,255,255,.14)}
+input[type=range]::-moz-range-progress{height:4px;border-radius:2px;background:var(--ac)}
+input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#fff;border:0}
+select{font:13px var(--f-ui);color:var(--tx);background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:8px}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--mu);font-size:11.5px}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--ac2);outline-offset:2px}
+#err{position:fixed;inset:0;display:none;place-items:center;padding:24px;text-align:center}
+#err div{max-width:420px;background:var(--glass);border:1px solid var(--line);border-radius:16px;padding:20px}
+@media (prefers-reduced-motion:reduce){#sheet{transition:none}}
+
+/* Layout ohne schwebendes Blatt: Bild oben, Bedienung darunter im normalen Seitenfluss (jeder Artefakt-Rahmen kann scrollen) */
+html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto;touch-action:auto}
+#view{position:relative;height:min(60vh,720px);min-height:280px}
+#view canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+#hud{position:absolute;top:10px;left:max(12px,env(safe-area-inset-left,0px))}
+#sheet,#sheet.low{position:static;transform:none;max-width:none;max-height:none;overflow:visible;margin:0;border-radius:18px 18px 0 0;border-bottom:0;padding-bottom:calc(28px + env(safe-area-inset-bottom,0px))}
+#grab{display:none}
+@media (min-width:900px){html,body{height:100%;overflow:hidden}#view{position:fixed;inset:0;height:auto}#sheet,#sheet.low{position:fixed;left:auto;right:16px;top:16px;bottom:16px;width:420px;overflow-y:auto;border-radius:18px;border:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<div id="view"><canvas id="c"></canvas>
+<div id="hud"><span id="fps">–</span><span>·</span><span id="info">–</span></div></div>
+<div id="sheet">
+  <button id="grab" aria-label="Bedienfeld ein- oder ausklappen"></button>
+  <div class="chips" id="scenes"></div>
+  <div class="seg" id="meth"></div>
+  <div class="row"><button class="act" id="go">Milch eingießen</button><button class="act ghost" id="pause" aria-label="Pause">❚❚</button><button class="act ghost" id="reset">Neu</button></div>
+  <div class="h">Qualität</div><div class="seg q" id="qual"></div>
+  <div class="h">Regler · ⓘ zeigt Formel</div>
+  <div id="sliders" style="display:flex;flex-direction:column;gap:2px"></div>
+  <div class="foot"><span>Ziehen dreht · zwei Finger zoomen · nach unten scrollen für alle Regler</span></div>
+</div>
+<div id="err"><div><b>WebGPU fehlt</b><p style="color:var(--mu)">Dieses Labor rechnet die Strömung auf der Grafikkarte. Bitte in aktuellem Chrome (Android/Desktop) oder Safari 26 öffnen.</p></div></div>
+<script type="module">
+// Gitter-Strömung (Stam 1999 „Stable Fluids“ in 3D, MacCormack-Farbtransport, Wirbelverstärkung Fedkiw 2001),
+// Milch als „umgekehrter Rauch“ (Boussinesq: schwer → sinkt). Darstellung: M2 Volumen-Raymarching mit Lichtvolumen, M3 Marker.
+const qs=new URLSearchParams(location.search), TEST=qs.has('test'), $=s=>document.querySelector(s);
+const TIERS={potato:{G:56,D:80,nt:300000,rs:.45,jac:24,name:'Altes Handy'},phone:{G:72,D:112,nt:800000,rs:.6,jac:30,name:'Gutes Handy'},laptop:{G:96,D:160,nt:2000000,rs:.8,jac:40,name:'Laptop'},gaming:{G:128,D:224,nt:4000000,rs:1,jac:60,name:'Gaming-PC'}};
+let tierKey=qs.get('tier');if(!TIERS[tierKey]){try{tierKey=localStorage.getItem('wkl.tier2')}catch(e){}}if(tierKey==='igpu')tierKey='laptop';if(!TIERS[tierKey])tierKey=/Mobi|Android|iPhone|iPad/.test(navigator.userAgent)?'phone':'laptop';
+const T={...TIERS[tierKey]};if(qs.get('rs'))T.rs=+qs.get('rs');
+const G=T.G,D=T.D,MAXT=T.nt;let M=+(qs.get('m')||2);if(M!==3)M=2;
+if(!navigator.gpu){document.getElementById('err').style.display='grid';throw 0;}
+const adapter=await navigator.gpu.requestAdapter({powerPreference:'high-performance'});if(!adapter){document.getElementById('err').style.display='grid';throw 0;}
+const device=await adapter.requestDevice({requiredLimits:{maxStorageBufferBindingSize:Math.min(adapter.limits.maxStorageBufferBindingSize,268435456),maxBufferSize:Math.min(adapter.limits.maxBufferSize,268435456)}});
+const canvas=$('#c'),ctx=canvas.getContext('webgpu'),FMT=navigator.gpu.getPreferredCanvasFormat();
+ctx.configure({device,format:FMT,alphaMode:'opaque',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_SRC});
+
+// ---------- gemeinsame WGSL-Teile
+const W_U=/*wgsl*/`
+struct U { a: vec4f, b: vec4f, c: vec4f, d: vec4f, e: vec4f, f: vec4f };
+// a: G, D, dt, mode(1 Tasse, 0 Kugel)   b: center xyz, Rs (Kugel)   c: Rc, Y0, YT, buoy
+// d: jet pos xyz (Kugel: Eintrittspunkt), jetR   e: jet dir xyz, jetV   f: vortEps, srcOn, time, -
+@group(0) @binding(0) var<uniform> u: U;
+fn inDom(p: vec3f) -> bool {
+  if (u.a.w > 0.5) { let q = p.xz - u.b.xz; return dot(q, q) < u.c.x * u.c.x && p.y > u.c.y && p.y < u.c.z; }
+  return length(p - u.b.xyz) < u.b.w;
+}
+fn inJet(p: vec3f) -> bool {
+  let d = u.e.xyz; let q = p - u.d.xyz; let t = dot(q, d);
+  return t > -0.5 && t < 2.5 && length(q - d * t) < u.d.w;
+}
+`;
+const W_SIM=W_U+/*wgsl*/`
+@group(0) @binding(1) var S0: sampler;
+@group(0) @binding(2) var VIN: texture_3d<f32>;
+@group(0) @binding(3) var VOUT: texture_storage_3d<rgba16float, write>;
+@group(0) @binding(4) var CIN: texture_3d<f32>;
+fn gs() -> f32 { return u.a.x; }
+@compute @workgroup_size(4, 4, 4) fn advV(@builtin(global_invocation_id) id: vec3u) {
+  let g = u32(u.a.x); if (any(id >= vec3u(g))) { return; }
+  let p = vec3f(id) + 0.5;
+  if (!inDom(p)) { textureStore(VOUT, id, vec4f(0.0)); return; }
+  let v0 = textureLoad(VIN, id, 0).xyz;
+  let back = p - u.a.z * v0;
+  var v = textureSampleLevel(VIN, S0, back / gs(), 0.0).xyz;
+  // Boussinesq: Milch schwerer → sinkt (Tasse: −y, Kugel: zur Mitte)
+  let c = textureSampleLevel(CIN, S0, p / gs(), 0.0).r;
+  if (u.a.w > 0.5) { v.y -= u.a.z * u.c.w * c; } else { v -= u.a.z * u.c.w * c * normalize(p - u.b.xyz + vec3f(1e-4)); }
+  if (u.f.y > 0.5 && inJet(p)) { v = u.e.xyz * u.e.w; }
+  textureStore(VOUT, id, vec4f(v, 0.0));
+}
+`;
+const W_CURL=W_U+/*wgsl*/`
+@group(0) @binding(2) var VIN: texture_3d<f32>;
+@group(0) @binding(3) var WOUT: texture_storage_3d<rgba16float, write>;
+fn V(q: vec3i) -> vec3f { let g = i32(u.a.x); return textureLoad(VIN, clamp(q, vec3i(0), vec3i(g - 1)), 0).xyz; }
+@compute @workgroup_size(4, 4, 4) fn curl(@builtin(global_invocation_id) id: vec3u) {
+  let g = u32(u.a.x); if (any(id >= vec3u(g))) { return; }
+  let c = vec3i(id);
+  let dx = (V(c + vec3i(1, 0, 0)) - V(c - vec3i(1, 0, 0))) * 0.5;
+  let dy = (V(c + vec3i(0, 1, 0)) - V(c - vec3i(0, 1, 0))) * 0.5;
+  let dz = (V(c + vec3i(0, 0, 1)) - V(c - vec3i(0, 0, 1))) * 0.5;
+  let w = vec3f(dy.z - dz.y, dz.x - dx.z, dx.y - dy.x);
+  textureStore(WOUT, id, vec4f(w, length(w)));
+}
+`;
+const W_CONF=W_U+/*wgsl*/`
+@group(0) @binding(2) var VIN: texture_3d<f32>;
+@group(0) @binding(3) var VOUT: texture_storage_3d<rgba16float, write>;
+@group(0) @binding(4) var WIN: texture_3d<f32>;
+fn WL(q: vec3i) -> f32 { let g = i32(u.a.x); return textureLoad(WIN, clamp(q, vec3i(0), vec3i(g - 1)), 0).w; }
+@compute @workgroup_size(4, 4, 4) fn conf(@builtin(global_invocation_id) id: vec3u) {
+  let g = u32(u.a.x); if (any(id >= vec3u(g))) { return; }
+  let c = vec3i(id); var v = textureLoad(VIN, c, 0).xyz;
+  let p = vec3f(id) + 0.5;
+  if (inDom(p)) {
+    let eta = vec3f(WL(c + vec3i(1, 0, 0)) - WL(c - vec3i(1, 0, 0)), WL(c + vec3i(0, 1, 0)) - WL(c - vec3i(0, 1, 0)), WL(c + vec3i(0, 0, 1)) - WL(c - vec3i(0, 0, 1))) * 0.5;
+    let el = length(eta);
+    if (el > 1e-6) { v += u.a.z * u.f.x * cross(eta / el, textureLoad(WIN, c, 0).xyz); }
+  }
+  textureStore(VOUT, c, vec4f(v, 0.0));
+}
+`;
+const W_DIV=W_U+/*wgsl*/`
+@group(0) @binding(2) var VIN: texture_3d<f32>;
+@group(0) @binding(3) var DOUT: texture_storage_3d<r32float, write>;
+fn V(q: vec3i) -> vec3f { let g = i32(u.a.x); let qq = clamp(q, vec3i(0), vec3i(g - 1)); if (!inDom(vec3f(qq) + 0.5)) { return vec3f(0.0); } return textureLoad(VIN, qq, 0).xyz; }
+@compute @workgroup_size(4, 4, 4) fn div(@builtin(global_invocation_id) id: vec3u) {
+  let g = u32(u.a.x); if (any(id >= vec3u(g))) { return; }
+  let c = vec3i(id);
+  let d = 0.5 * (V(c + vec3i(1, 0, 0)).x - V(c - vec3i(1, 0, 0)).x + V(c + vec3i(0, 1, 0)).y - V(c - vec3i(0, 1, 0)).y + V(c + vec3i(0, 0, 1)).z - V(c - vec3i(0, 0, 1)).z);
+  textureStore(DOUT, c, vec4f(d, 0.0, 0.0, 0.0));
+}
+`;
+const W_JAC=W_U+/*wgsl*/`
+@group(0) @binding(2) var PIN: texture_3d<f32>;
+@group(0) @binding(3) var POUT: texture_storage_3d<r32float, write>;
+@group(0) @binding(4) var DIN: texture_3d<f32>;
+@compute @workgroup_size(4, 4, 4) fn jac(@builtin(global_invocation_id) id: vec3u) {
+  let g = i32(u.a.x); if (any(vec3i(id) >= vec3i(g))) { return; }
+  let c = vec3i(id); let pc = textureLoad(PIN, c, 0).r;
+  if (!inDom(vec3f(c) + 0.5)) { textureStore(POUT, c, vec4f(0.0)); return; }
+  var s = 0.0;
+  for (var k = 0; k < 6; k++) { var o = vec3i(0); o[k / 2] = select(-1, 1, (k & 1) == 1);
+    let q = clamp(c + o, vec3i(0), vec3i(g - 1));
+    s += select(pc, textureLoad(PIN, q, 0).r, inDom(vec3f(q) + 0.5)); }
+  textureStore(POUT, c, vec4f((s - textureLoad(DIN, c, 0).r) / 6.0, 0.0, 0.0, 0.0));
+}
+`;
+const W_PROJ=W_U+/*wgsl*/`
+@group(0) @binding(2) var VIN: texture_3d<f32>;
+@group(0) @binding(3) var VOUT: texture_storage_3d<rgba16float, write>;
+@group(0) @binding(4) var PIN: texture_3d<f32>;
+@compute @workgroup_size(4, 4, 4) fn proj(@builtin(global_invocation_id) id: vec3u) {
+  let g = i32(u.a.x); if (any(vec3i(id) >= vec3i(g))) { return; }
+  let c = vec3i(id); let p = vec3f(c) + 0.5;
+  if (!inDom(p)) { textureStore(VOUT, c, vec4f(0.0)); return; }
+  let pc = textureLoad(PIN, c, 0).r;
+  var gp = vec3f(0.0); var v = textureLoad(VIN, c, 0).xyz;
+  for (var k = 0; k < 3; k++) {
+    var o = vec3i(0); o[k] = 1;
+    let qp = clamp(c + o, vec3i(0), vec3i(g - 1)); let qm = clamp(c - o, vec3i(0), vec3i(g - 1));
+    let ip = inDom(vec3f(qp) + 0.5); let im = inDom(vec3f(qm) + 0.5);
+    gp[k] = 0.5 * (select(pc, textureLoad(PIN, qp, 0).r, ip) - select(pc, textureLoad(PIN, qm, 0).r, im));
+    v[k] -= gp[k];
+    if (!ip) { v[k] = min(v[k], 0.0); } if (!im) { v[k] = max(v[k], 0.0); }
+  }
+  textureStore(VOUT, c, vec4f(v, 0.0));
+}
+`;
+// MacCormack-Farbtransport (Selle et al. 2008) auf feinerem Farbgitter D³
+const W_DYE=W_U+/*wgsl*/`
+@group(0) @binding(1) var S0: sampler;
+@group(0) @binding(2) var VEL: texture_3d<f32>;
+@group(0) @binding(3) var A: texture_3d<f32>;
+@group(0) @binding(4) var B: texture_3d<f32>;
+@group(0) @binding(5) var OUT: texture_storage_3d<rgba16float, write>;
+@group(0) @binding(6) var<uniform> SGN: vec4f;
+fn uvw(id: vec3u) -> vec3f { return (vec3f(id) + 0.5) / u.a.y; }
+@compute @workgroup_size(4, 4, 4) fn dstep(@builtin(global_invocation_id) id: vec3u) {
+  let d = u32(u.a.y); if (any(id >= vec3u(d))) { return; }
+  let q = uvw(id);
+  let v = textureSampleLevel(VEL, S0, q, 0.0).xyz;
+  let src = q - SGN.x * u.a.z * v / u.a.x;
+  textureStore(OUT, id, textureSampleLevel(A, S0, src, 0.0));
+}
+@compute @workgroup_size(4, 4, 4) fn corr(@builtin(global_invocation_id) id: vec3u) {
+  // A = Original, B = Rückwärts-Ergebnis, OUT ← vorwärts + ½(Original − rückwärts), begrenzt
+  let d = u32(u.a.y); if (any(id >= vec3u(d))) { return; }
+  let q = uvw(id);
+  let v = textureSampleLevel(VEL, S0, q, 0.0).xyz;
+  let src = q - u.a.z * v / u.a.x;
+  let fw = textureSampleLevel(A, S0, src, 0.0);
+  var r = fw + 0.5 * (textureLoad(A, id, 0) - textureLoad(B, id, 0));
+  // Grenzen der 8 Nachbarn am Herkunftsort (Stabilität)
+  let sp = src * u.a.y - 0.5; let i0 = vec3i(floor(sp)); var lo = vec4f(1e9); var hi = vec4f(-1e9);
+  for (var k = 0; k < 8; k++) { let o = vec3i(k & 1, (k >> 1) & 1, (k >> 2) & 1); let s = textureLoad(A, clamp(i0 + o, vec3i(0), vec3i(i32(d) - 1)), 0); lo = min(lo, s); hi = max(hi, s); }
+  r = clamp(r, lo, hi);
+  let p = q * u.a.x;
+  if (!inDom(p)) { r = vec4f(0.0); }
+  if (u.f.y > 0.5 && inJet(p)) { r = vec4f(1.0, 0.0, 0.0, 0.0); }
+  textureStore(OUT, id, r);
+}
+`;
+const TEA='vec3f(0.08, 1.6, 4.0)';
+const W_LIGHT=W_U+/*wgsl*/`
+@group(0) @binding(1) var S0: sampler;
+@group(0) @binding(2) var C: texture_3d<f32>;
+@group(0) @binding(3) var LOUT: texture_storage_3d<rgba16float, write>;
+@group(0) @binding(4) var<uniform> LP: vec4f; // Lichtrichtung, Milch-Extinktion je Zelle
+@group(0) @binding(5) var<uniform> LQ: vec4f; // Tee-Faktor
+@compute @workgroup_size(4, 4, 4) fn light(@builtin(global_invocation_id) id: vec3u) {
+  let g = u32(u.a.x); if (any(id >= vec3u(g))) { return; }
+  var p = vec3f(id) + 0.5; var tau = vec3f(0.0);
+  for (var i = 0; i < 40; i++) { p += LP.xyz;
+    if (any(p < vec3f(0.0)) || any(p > vec3f(f32(g)))) { break; }
+    if (!inDom(p)) { continue; }
+    let c = textureSampleLevel(C, S0, p / u.a.x, 0.0).r;
+    tau += c * LP.w + (1.0 - c) * LQ.x * LQ.yzw; }
+  textureStore(LOUT, id, vec4f(exp(-tau), 1.0));
+}
+`;
+const W_ADV=W_U+/*wgsl*/`
+@group(0) @binding(1) var S0: sampler;
+@group(0) @binding(2) var VEL: texture_3d<f32>;
+@group(0) @binding(3) var<storage, read_write> TB: array<vec4f>;
+@group(0) @binding(4) var<uniform> NT: vec4f;
+@compute @workgroup_size(64) fn adv(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= u32(NT.x)) { return; }
+  var t = TB[id.x]; if (t.w <= 0.0) { return; }
+  let g = u.a.x;
+  var v = textureSampleLevel(VEL, S0, t.xyz / g, 0.0).xyz;
+  let m = t.xyz + 0.5 * u.a.z * v;
+  v = textureSampleLevel(VEL, S0, m / g, 0.0).xyz;
+  var x = t.xyz + u.a.z * v;
+  if (!inDom(x)) { x = t.xyz; }
+  TB[id.x] = vec4f(x, t.w);
+}
+`;
+// ---------- Darstellung
+const W_R=/*wgsl*/`
+struct R { view: mat4x4f, proj: mat4x4f, iview: mat4x4f, cam: vec4f, L: vec4f, sun: vec4f, amb: vec4f, k: vec4f, res: vec4f, tea: vec4f, mc: vec4f };
+// cam: xyz, mode   L: dir, sunI   sun: rgb, exposure   amb: rgb, M   k: milkExt, teaK, D, NTon   res: w, h, focal, Vt
+`;
+const W_FS=/*wgsl*/`
+struct FV { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
+@vertex fn vs(@builtin(vertex_index) i: u32) -> FV { var p = array<vec2f, 3>(vec2f(-1, -1), vec2f(3, -1), vec2f(-1, 3)); var o: FV; o.pos = vec4f(p[i], 0.0, 1.0); o.uv = vec2f(p[i].x * 0.5 + 0.5, 0.5 - p[i].y * 0.5); return o; }
+`;
+const W_GEO=/*wgsl*/`
+fn hit(ro: vec3f, rd: vec3f) -> vec2f {
+  if (u.a.w > 0.5) {
+    let o = ro.xz - u.b.xz; let d = rd.xz; let a = dot(d, d); let b = dot(o, d); let c = dot(o, o) - u.c.x * u.c.x;
+    var t0 = -1e9; var t1 = 1e9;
+    if (a > 1e-8) { let h = b * b - a * c; if (h < 0.0) { return vec2f(1.0, -1.0); } let s = sqrt(h); t0 = (-b - s) / a; t1 = (-b + s) / a; }
+    else if (c > 0.0) { return vec2f(1.0, -1.0); }
+    if (abs(rd.y) > 1e-8) { let ta = (u.c.y - ro.y) / rd.y; let tb = (u.c.z - ro.y) / rd.y; t0 = max(t0, min(ta, tb)); t1 = min(t1, max(ta, tb)); }
+    else if (ro.y < u.c.y || ro.y > u.c.z) { return vec2f(1.0, -1.0); }
+    return vec2f(t0, t1);
+  }
+  let oc = ro - u.b.xyz; let b = dot(oc, rd); let c = dot(oc, oc) - u.b.w * u.b.w; let h = b * b - c;
+  if (h < 0.0) { return vec2f(1.0, -1.0); } let s = sqrt(h); return vec2f(-b - s, -b + s);
+}
+fn nrmAt(p: vec3f) -> vec3f {
+  if (u.a.w > 0.5) {
+    let q = p.xz - u.b.xz; let rr = length(q);
+    if (abs(p.y - u.c.z) < 0.05 && rr < u.c.x - 0.05) { return vec3f(0.0, 1.0, 0.0); }
+    if (abs(p.y - u.c.y) < 0.05 && rr < u.c.x - 0.05) { return vec3f(0.0, -1.0, 0.0); }
+    return vec3f(q.x, 0.0, q.y) / max(rr, 1e-4);
+  }
+  return normalize(p - u.b.xyz);
+}
+`;
+const W_ENV=/*wgsl*/`
+fn softRect(rd: vec3f, c: vec3f, uu: vec3f, vv: vec3f, a: f32, b: f32) -> f32 { let k = dot(rd, c); if (k <= 0.0) { return 0.0; } let q = rd / k; return smoothstep(1.0, 0.92, abs(dot(q, uu)) / a) * smoothstep(1.0, 0.92, abs(dot(q, vv)) / b); }
+fn hash3(p: vec3f) -> f32 { return fract(sin(dot(p, vec3f(12.9898, 78.233, 37.719))) * 43758.5453); }
+fn env(rd: vec3f) -> vec3f {
+  if (u.a.w > 0.5) {
+    var c = mix(vec3f(0.40, 0.30, 0.22), vec3f(1.20, 1.05, 0.86), smoothstep(-0.15, 0.6, rd.y));
+    let k1 = normalize(vec3f(0.85, 0.35, -0.4)); let u1 = normalize(cross(k1, vec3f(0, 1, 0))); let v1 = cross(u1, k1);
+    c += vec3f(1.0, 0.96, 0.9) * 5.0 * softRect(rd, k1, u1, v1, 0.5, 0.4);
+    return c;
+  }
+  var c = mix(vec3f(0.16, 0.17, 0.19), vec3f(0.85, 0.88, 0.92), smoothstep(-0.7, 0.8, rd.y));
+  let az = atan2(rd.z, rd.x); let el = asin(clamp(rd.y, -1.0, 1.0));
+  let gx = abs(fract(az * 3.0 / 3.14159) - 0.5); let gy = abs(fract(el * 4.0 / 3.14159) - 0.5);
+  c *= 1.0 - 0.35 * smoothstep(0.47, 0.5, max(gx, gy));
+  c = mix(c, c * vec3f(1.15, 0.75, 0.45), smoothstep(0.2, 0.0, abs(az - 0.6)) * smoothstep(0.3, 0.1, abs(el)) * 0.6);
+  let k1 = normalize(vec3f(-0.55, 0.65, 0.52)); let u1 = normalize(cross(k1, vec3f(0, 1, 0))); let v1 = cross(u1, k1);
+  c += vec3f(1.0, 0.97, 0.92) * 6.0 * softRect(rd, k1, u1, v1, 0.35, 0.22);
+  return c;
+}
+fn scene(ro: vec3f, rd: vec3f) -> vec3f {
+  if (u.a.w > 0.5 && rd.y < -1e-3) {
+    let ty = u.c.y - 1.6; let t = (ty - ro.y) / rd.y;
+    if (t > 0.0) { let p = ro + rd * t; let gr = sin(p.x * 0.35 + sin(p.z * 0.07) * 3.0) * 0.5 + 0.5;
+      var col = mix(vec3f(0.20, 0.11, 0.055), vec3f(0.34, 0.20, 0.10), gr * 0.7 + 0.3 * hash3(floor(vec3f(p.x * 0.5, 0.0, p.z * 4.0))));
+      let r = length(p.xz - u.b.xz); col *= mix(0.4, 1.0, smoothstep(u.c.x, u.c.x + 6.0, r)) * 1.6;
+      return mix(env(rd), col, exp(-t * 0.004)); }
+  }
+  return env(rd);
+}
+`;
+const W_VIEW=W_FS+W_U+W_R+W_GEO+W_ENV+/*wgsl*/`
+@group(0) @binding(1) var S0: sampler;
+@group(0) @binding(2) var<uniform> r: R;
+@group(0) @binding(3) var CT: texture_3d<f32>;
+@group(0) @binding(4) var LT: texture_3d<f32>;
+@group(0) @binding(5) var TRC: texture_2d<f32>;
+const TEA = vec3f(1.0);
+fn fres(c: f32, f0: f32) -> f32 { return f0 + (1.0 - f0) * pow(clamp(1.0 - c, 0.0, 1.0), 5.0); }
+fn aces(x: vec3f) -> vec3f { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), vec3f(0.0), vec3f(1.0)); }
+@fragment fn fs(i: FV) -> @location(0) vec4f {
+  let n2 = vec2f(i.uv.x * 2.0 - 1.0, 1.0 - i.uv.y * 2.0);
+  let vr = vec3f(n2.x / r.proj[0][0], n2.y / r.proj[1][1], -1.0);
+  let ro = r.cam.xyz; let rd = normalize((r.iview * vec4f(vr, 0.0)).xyz);
+  var col = scene(ro, rd);
+  let h = hit(ro, rd);
+  if (h.y > max(h.x, 0.0)) {
+    let t0 = max(h.x, 0.0); let pin = ro + rd * t0; let n = nrmAt(pin);
+    var r1 = refract(rd, n, 0.75); if (dot(r1, r1) < 0.5) { r1 = rd; }
+    let h2 = hit(pin + r1 * 0.01, r1); let len = max(h2.y, 0.0);
+    let stepL = r.mc.w; let ns = min(i32(len / stepL) + 1, 200); let dl = len / f32(ns);
+    var Tr = vec3f(1.0); var Lr = vec3f(0.0);
+    let milkOn = r.amb.w < 2.5;
+    for (var k = 0; k < ns; k++) {
+      let p = pin + r1 * (f32(k) + 0.5) * dl;
+      var c = 0.0; if (milkOn) { c = textureSampleLevel(CT, S0, p / u.a.x, 0.0).r; }
+      let sig = c * r.k.x * vec3f(1.0) + (1.0 - c) * r.k.y * r.tea.xyz;
+      if (c > 0.002) {
+        let lt = textureSampleLevel(LT, S0, p / u.a.x, 0.0).rgb;
+        let ms = lt + 0.5 * pow(lt, vec3f(0.3)) + 0.25 * pow(lt, vec3f(0.1));
+        let S = c * r.k.x * r.mc.xyz * (r.sun.rgb * r.L.w * 0.45 * ms + r.amb.rgb * 1.2 * pow(lt, vec3f(0.25)));
+        Lr += Tr * S * (1.0 - exp(-sig * dl)) / max(sig, vec3f(1e-4));
+      }
+      Tr *= exp(-sig * dl);
+      if (max(Tr.x, max(Tr.y, Tr.z)) < 0.003) { break; }
+    }
+    let pe = pin + r1 * len; let ne = nrmAt(pe);
+    var r2 = refract(r1, -ne, 1.333); if (dot(r2, r2) < 0.5) { r2 = reflect(r1, -ne); }
+    var c = Lr + Tr * scene(pe + r2 * 0.05, r2);
+    // Marker (M3) über den Tee legen
+    if (r.k.w > 0.5) {
+      let ts = 1.0 / vec2f(textureDimensions(TRC)); var acc = vec4f(0.0);
+      for (var yy = -1; yy <= 1; yy++) { for (var xx = -1; xx <= 1; xx++) { let w = select(0.5, 1.0, xx == 0) * select(0.5, 1.0, yy == 0); acc += w * textureSampleLevel(TRC, S0, i.uv + vec2f(f32(xx), f32(yy)) * ts * 0.75, 0.0); } }
+      acc /= 4.0; if (acc.a > 1e-4) { c = mix(c, acc.rgb / acc.a, 1.0 - exp(-acc.a)); }
+    }
+    let F = fres(clamp(dot(-rd, n), 0.0, 1.0), 0.02);
+    let H = normalize(r.L.xyz - rd);
+    col = mix(c, scene(pin + n * 0.1, reflect(rd, n)), F) + pow(max(dot(n, H), 0.0), 900.0) * r.L.w * 40.0 * F;
+  }
+  // Glaswand (Tasse), dünn: nur Fresnel-Reflex vorn
+  if (u.a.w > 0.5) {
+    let o = ro.xz - u.b.xz; let d = rd.xz; let a = dot(d, d); let b = dot(o, d); let Ro = u.c.x + 1.6; let cc = dot(o, o) - Ro * Ro; let hh = b * b - a * cc;
+    if (hh > 0.0 && a > 1e-8) { let tg = (-b - sqrt(hh)) / a; let pg = ro + rd * tg; if (tg > 0.0 && pg.y > u.c.y - 1.6 && pg.y < u.c.y + (u.c.z - u.c.y) / 0.65) {
+      let ng = normalize(vec3f(pg.x - u.b.x, 0.0, pg.z - u.b.z)); let F = fres(abs(dot(rd, ng)), 0.04); col = col * (1.0 - F) * 0.97 + env(reflect(rd, ng)) * F; } }
+  }
+  var o = aces(col * r.sun.w);
+  let vv = i.uv - 0.5; o *= 1.0 - dot(vv, vv) * 0.45;
+  return vec4f(pow(o, vec3f(1.0 / 2.2)), 1.0);
+}
+`;
+const W_TRC=W_U+W_R+W_GEO+/*wgsl*/`
+@group(0) @binding(1) var S0: sampler;
+@group(0) @binding(2) var<uniform> r: R;
+@group(0) @binding(3) var<storage, read> TB: array<vec4f>;
+@group(0) @binding(4) var LT: texture_3d<f32>;
+const TEA = vec3f(1.0);
+struct VO { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) c: vec4f };
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
+  var o: VO; o.pos = vec4f(2.0, 2.0, 2.0, 1.0); o.c = vec4f(0.0);
+  let t = TB[i]; if (t.w <= 0.0) { return o; }
+  let vp = (r.view * vec4f(t.xyz, 1.0)).xyz; let cl = r.proj * vec4f(vp, 1.0);
+  if (vp.z > -0.5) { return o; }
+  let ro = r.cam.xyz; let dv = t.xyz - ro; let dist = length(dv); let rd = dv / dist;
+  let h = hit(ro, rd); let tea = max(dist - max(h.x, 0.0), 0.0);
+  let Tf = exp(-tea * r.k.y * r.tea.xyz);
+  let lt = textureSampleLevel(LT, S0, t.xyz / u.a.x, 0.0).rgb;
+  // Mehrfachstreuung: dichte Milch bleibt hell (Oktaven), vorderste Marker zählen am meisten
+  let ms = lt + 0.5 * pow(lt, vec3f(0.3)) + 0.3 * pow(lt, vec3f(0.08)) + 0.12;
+  let lit = r.mc.xyz * (r.sun.rgb * r.L.w * 0.45 * ms + r.amb.rgb * 1.2 * (0.35 + 0.65 * pow(lt, vec3f(0.25)))) * Tf;
+  let fz = pow(clamp((max(h.x, 0.0) + 1.5) / dist, 0.0, 1.0), 8.0);
+  let dp = -vp.z; let w = r.res.w * r.k.x * r.res.z * r.res.z / (dp * dp);
+  o.pos = cl; o.c = vec4f(lit * w * fz, w * fz); return o;
+}
+@fragment fn fs(i: VO) -> @location(0) vec4f { return i.c; }
+`;
+
+// ---------- Ressourcen
+const tex3=(n,f,st)=>device.createTexture({size:[n,n,n],dimension:'3d',format:f,usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.STORAGE_BINDING|GPUTextureUsage.COPY_SRC|GPUTextureUsage.COPY_DST});
+const V0=tex3(G,'rgba16float'),V1=tex3(G,'rgba16float'),W=tex3(G,'rgba16float'),P0=tex3(G,'r32float'),P1=tex3(G,'r32float'),DV=tex3(G,'r32float'),LT=tex3(G,'rgba16float');
+const C0=tex3(D,'rgba16float'),C1=tex3(D,'rgba16float'),C2=tex3(D,'rgba16float'),C3=tex3(D,'rgba16float');
+const lin=device.createSampler({magFilter:'linear',minFilter:'linear',addressModeU:'clamp-to-edge',addressModeV:'clamp-to-edge',addressModeW:'clamp-to-edge'});
+const ub=(n)=>device.createBuffer({size:n,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+const uBuf=ub(96),rBuf=ub(64*3*4+8*16),sgnF=ub(16),sgnB=ub(16),lpB=ub(16),lqB=ub(16),ntB=ub(16);
+device.queue.writeBuffer(sgnF,0,new Float32Array([1,0,0,0]));device.queue.writeBuffer(sgnB,0,new Float32Array([-1,0,0,0]));
+const tBuf=device.createBuffer({size:MAXT*16,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST|GPUBufferUsage.COPY_SRC});
+async function mod(code,l){const m=device.createShaderModule({code});const ci=await m.getCompilationInfo();for(const x of ci.messages)if(x.type==='error')console.error(l+': '+x.message+' @'+x.lineNum+' '+code.split('\n')[x.lineNum-1]);return m;}
+const cp=(m,e)=>device.createComputePipeline({layout:'auto',compute:{module:m,entryPoint:e}});
+const BGs=(p,ents)=>device.createBindGroup({layout:p.getBindGroupLayout(0),entries:ents.map(([b,r])=>({binding:b,resource:r}))});
+const Bf=b=>({buffer:b}),v=t=>t.createView();
+const mSim=await mod(W_SIM,'sim'),mCurl=await mod(W_CURL,'curl'),mConf=await mod(W_CONF,'conf'),mDiv=await mod(W_DIV,'div'),mJac=await mod(W_JAC,'jac'),mProj=await mod(W_PROJ,'proj'),mDye=await mod(W_DYE,'dye'),mLight=await mod(W_LIGHT,'light'),mAdv=await mod(W_ADV,'adv'),mView=await mod(W_VIEW,'view'),mTrc=await mod(W_TRC,'trc');
+const pAdvV=cp(mSim,'advV'),pCurl=cp(mCurl,'curl'),pConf=cp(mConf,'conf'),pDiv=cp(mDiv,'div'),pJac=cp(mJac,'jac'),pProj=cp(mProj,'proj'),pStep=cp(mDye,'dstep'),pCorr=cp(mDye,'corr'),pLight=cp(mLight,'light'),pAdv=cp(mAdv,'adv');
+const gAdvV=BGs(pAdvV,[[0,Bf(uBuf)],[1,lin],[2,v(V0)],[3,v(V1)],[4,v(C0)]]);
+const gCurl=BGs(pCurl,[[0,Bf(uBuf)],[2,v(V1)],[3,v(W)]]);
+const gConf=BGs(pConf,[[0,Bf(uBuf)],[2,v(V1)],[3,v(V0)],[4,v(W)]]);
+const gDiv=BGs(pDiv,[[0,Bf(uBuf)],[2,v(V0)],[3,v(DV)]]);
+const gJ01=BGs(pJac,[[0,Bf(uBuf)],[2,v(P0)],[3,v(P1)],[4,v(DV)]]),gJ10=BGs(pJac,[[0,Bf(uBuf)],[2,v(P1)],[3,v(P0)],[4,v(DV)]]);
+const gProj=BGs(pProj,[[0,Bf(uBuf)],[2,v(V0)],[3,v(V1)],[4,v(P0)]]);
+const gFwd=BGs(pStep,[[0,Bf(uBuf)],[1,lin],[2,v(V1)],[3,v(C0)],[5,v(C1)],[6,Bf(sgnF)]]);
+const gBack=BGs(pStep,[[0,Bf(uBuf)],[1,lin],[2,v(V1)],[3,v(C1)],[5,v(C2)],[6,Bf(sgnB)]]);
+const gCorr=BGs(pCorr,[[0,Bf(uBuf)],[1,lin],[2,v(V1)],[3,v(C0)],[4,v(C2)],[5,v(C3)]]);
+const gLight=BGs(pLight,[[0,Bf(uBuf)],[1,lin],[2,v(C0)],[3,v(LT)],[4,Bf(lpB)],[5,Bf(lqB)]]);
+const gAdv=BGs(pAdv,[[0,Bf(uBuf)],[1,lin],[2,v(V1)],[3,Bf(tBuf)],[4,Bf(ntB)]]);
+const add={color:{srcFactor:'one',dstFactor:'one',operation:'add'},alpha:{srcFactor:'one',dstFactor:'one',operation:'add'}};
+const pView=device.createRenderPipeline({layout:'auto',vertex:{module:mView,entryPoint:'vs'},fragment:{module:mView,entryPoint:'fs',targets:[{format:FMT}]},primitive:{topology:'triangle-list'}});
+const pTrc=device.createRenderPipeline({layout:'auto',vertex:{module:mTrc,entryPoint:'vs'},fragment:{module:mTrc,entryPoint:'fs',targets:[{format:'rgba16float',blend:add}]},primitive:{topology:'point-list'}});
+let trcT=null,gView=null,gTrc=null,VW=2,VH=2;
+function resize(){const dpr=Math.min(devicePixelRatio||1,2);const bb=canvas.getBoundingClientRect();canvas.width=Math.max(2,Math.floor(bb.width*dpr*T.rs));canvas.height=Math.max(2,Math.floor(bb.height*dpr*T.rs));VW=canvas.width;VH=canvas.height;
+  trcT?.destroy();trcT=device.createTexture({size:[Math.max(2,VW>>1),Math.max(2,VH>>1)],format:'rgba16float',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING});
+  gView=BGs(pView,[[0,Bf(uBuf)],[1,lin],[2,Bf(rBuf)],[3,v(C0)],[4,v(LT)],[5,v(trcT)]]);gTrc=BGs(pTrc,[[0,Bf(uBuf)],[1,lin],[2,Bf(rBuf)],[3,Bf(tBuf)],[4,v(LT)]]);}
+resize();addEventListener('resize',resize);
+
+// ---------- Zustand / Szenen
+const C=[G/2,G/2,G/2];const nrm=a=>{const l=Math.hypot(...a)||1;return a.map(x=>x/l);};
+const S={milkK:1,ambK:1,expo:1,teaR:.08,teaG:1.6,teaB:4,mr:.96,mg:.93,mb:.87,step:.45,jac:T.jac,scene:qs.get('scene')||'tasse',time:0,frame:0,src:0,NT:0,NTw:0,paused:false};
+const cam={yaw:.6,pitch:.1,dist:G*1.0,tgt:[...C]};
+function setScene(n){S.scene=n;S.time=0;S.frame=0;S.NT=0;S.NTw=0;
+  for(const t of [V0,V1,P0,P1,C0,C1,C2,C3])clearTex(t);
+  if(n==='tasse'){S.mode=1;S.Rc=Math.round(G*.2)-.4;S.Y0=5;S.YT=5+Math.round(G*.46)*.65;S.jet=[C[0]+S.Rc*.12,S.YT-0.5,C[2]-S.Rc*.05];S.jdir=[0,-1,0];S.jR=1.5;S.jV=.9;S.buoy=.012;S.eps=.25;S.src=110;
+    S.L=nrm([.85,.45,-.4]);S.sun=[1,.96,.9];S.sunI=2.0;S.amb=[.22,.19,.16];cam.tgt=[C[0],5+Math.round(G*.46)*.5,C[2]];cam.dist=G*1.0;cam.pitch=.1;}
+  else {S.mode=0;S.Rs=G*.3;const d=nrm([-.6,.75,.45]);S.jdir=d.map(x=>-x);S.jet=[C[0]+d[0]*(S.Rs-.6),C[1]+d[1]*(S.Rs-.6),C[2]+d[2]*(S.Rs-.6)];S.jR=1.6;S.jV=.8;S.buoy=.004;S.eps=.25;S.src=110;
+    S.L=nrm([-.55,.65,.52]);S.sun=[1,.97,.92];S.sunI=2.0;S.amb=[.45,.47,.5];cam.tgt=[...C];cam.dist=G*1.25;cam.pitch=.15;}}
+function clearTex(t){const n=t.width,bpp=t.format==='r32float'?4:8,bpr=Math.ceil(n*bpp/256)*256;const z=new Uint8Array(bpr*n);for(let k=0;k<n;k++)device.queue.writeTexture({texture:t,origin:[0,0,k]},z,{bytesPerRow:bpr,rowsPerImage:n},[n,n,1]);}
+let seed=3;const rnd=()=>{seed=(seed*16807)%2147483647;return (seed-1)/2147483646;};
+const TQ=Math.floor(MAXT/(G*G*G*0.05*4));
+function emitT(n,gen){n=Math.min(n,MAXT);if(n<=0)return;const a=new Float32Array(n*4);for(let i=0;i<n;i++){const p=gen();a.set([p[0],p[1],p[2],1],i*4);}let w=S.NTw,o=0;while(o<n){const c=Math.min(n-o,MAXT-w);device.queue.writeBuffer(tBuf,w*16,a,o*4,c*4);o+=c;w=(w+c)%MAXT;}S.NTw=w;S.NT=Math.min(MAXT,S.NT+n);}
+const persp=(fy,a,n,f)=>{const t=1/Math.tan(fy/2);return [t/a,0,0,0,0,t,0,0,0,0,f/(n-f),-1,0,0,n*f/(n-f),0];};
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],crs=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+function lookAt(e,c,up){const z=nrm(sub(e,c)),x=nrm(crs(up,z)),y=crs(z,x);return [x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,e),-dot(y,e),-dot(z,e),1];}
+function invRT(m){const r=[m[0],m[4],m[8],0,m[1],m[5],m[9],0,m[2],m[6],m[10],0,0,0,0,1];const t=[m[12],m[13],m[14]];r[12]=-(r[0]*t[0]+r[4]*t[1]+r[8]*t[2]);r[13]=-(r[1]*t[0]+r[5]*t[1]+r[9]*t[2]);r[14]=-(r[2]*t[0]+r[6]*t[1]+r[10]*t[2]);return r;}
+function frame(){
+  const on=S.src>0&&!S.paused;
+  if(on&&M===3){const d=S.jdir,uu=nrm(crs(d,Math.abs(d[1])<.9?[0,1,0]:[1,0,0])),ww=crs(d,uu);const n=Math.round(Math.PI*S.jR*S.jR*S.jV*TQ*4);
+    emitT(n,()=>{const an=rnd()*6.2832,rr=S.jR*Math.sqrt(rnd()),t=rnd()*2;return [S.jet[0]+d[0]*t+(uu[0]*Math.cos(an)+ww[0]*Math.sin(an))*rr,S.jet[1]+d[1]*t+(uu[1]*Math.cos(an)+ww[1]*Math.sin(an))*rr,S.jet[2]+d[2]*t+(uu[2]*Math.cos(an)+ww[2]*Math.sin(an))*rr];});}
+  const U=new Float32Array(24);U.set([G,D,S.paused?0:1,S.mode],0);U.set([...C,S.Rs||0],4);U.set([S.Rc||0,S.Y0||0,S.YT||0,S.buoy],8);U.set([...S.jet,S.jR],12);U.set([...S.jdir,S.jV],16);U.set([S.eps,on?1:0,S.time,0],20);
+  device.queue.writeBuffer(uBuf,0,U);
+  const os=96/G;device.queue.writeBuffer(lpB,0,new Float32Array([S.L[0]*1.2,S.L[1]*1.2,S.L[2]*1.2,2.4*os*1.2*S.milkK]));device.queue.writeBuffer(lqB,0,new Float32Array([(S.mode===1?.05:.03)*os*1.2*(S.teaK||1),S.teaR,S.teaG,S.teaB]));
+  device.queue.writeBuffer(ntB,0,new Float32Array([S.NT,0,0,0]));
+  const asp=VW/VH,dd=cam.dist*Math.max(1,Math.pow(.8/asp,.9)),sh=0,tg=[cam.tgt[0],cam.tgt[1]-dd*Math.tan(19*Math.PI/180)*sh*2,cam.tgt[2]];
+  const cpw=Math.cos(cam.pitch),eye=[tg[0]+Math.sin(cam.yaw)*cpw*dd,tg[1]+Math.sin(cam.pitch)*dd+dd*Math.tan(19*Math.PI/180)*sh*2,tg[2]+Math.cos(cam.yaw)*cpw*dd];
+  const view=lookAt(eye,tg,[0,1,0]),proj=persp(38*Math.PI/180,VW/VH,.5,G*8),iv=invRT(view);
+  const R=new Float32Array(48+32);R.set(view,0);R.set(proj,16);R.set(iv,32);R.set([...eye,S.mode],48);R.set([...S.L,S.sunI],52);R.set([...S.sun,S.expo],56);R.set([...S.amb.map(x=>x*S.ambK),M],60);R.set([2.4*os*S.milkK,(S.mode===1?.05:.03)*os*(S.teaK||1),D,M===3?1:0],64);R.set([VW,VH,proj[5]*(VH>>1)*.5,1/(4*TQ)],68);R.set([S.teaR,S.teaG,S.teaB,0],72);R.set([S.mr,S.mg,S.mb,S.step],76);
+  device.queue.writeBuffer(rBuf,0,R);
+  const e=device.createCommandEncoder();const wg=Math.ceil(G/4),wd=Math.ceil(D/4);
+  if(!S.paused){let c=e.beginComputePass();
+    c.setPipeline(pAdvV);c.setBindGroup(0,gAdvV);c.dispatchWorkgroups(wg,wg,wg);
+    c.setPipeline(pCurl);c.setBindGroup(0,gCurl);c.dispatchWorkgroups(wg,wg,wg);
+    c.setPipeline(pConf);c.setBindGroup(0,gConf);c.dispatchWorkgroups(wg,wg,wg);
+    c.setPipeline(pDiv);c.setBindGroup(0,gDiv);c.dispatchWorkgroups(wg,wg,wg);
+    for(let k=0;k<S.jac;k++){c.setPipeline(pJac);c.setBindGroup(0,k%2?gJ10:gJ01);c.dispatchWorkgroups(wg,wg,wg);}
+    c.setPipeline(pProj);c.setBindGroup(0,gProj);c.dispatchWorkgroups(wg,wg,wg);
+    c.setPipeline(pStep);c.setBindGroup(0,gFwd);c.dispatchWorkgroups(wd,wd,wd);c.setBindGroup(0,gBack);c.dispatchWorkgroups(wd,wd,wd);
+    c.setPipeline(pCorr);c.setBindGroup(0,gCorr);c.dispatchWorkgroups(wd,wd,wd);
+    if(S.NT>0){c.setPipeline(pAdv);c.setBindGroup(0,gAdv);c.dispatchWorkgroups(Math.ceil(S.NT/64));}
+    c.end();
+    e.copyTextureToTexture({texture:V1},{texture:V0},[G,G,G]);e.copyTextureToTexture({texture:C3},{texture:C0},[D,D,D]);
+    S.time+=1;S.frame++;if(S.src>0)S.src--;}
+  let c=e.beginComputePass();c.setPipeline(pLight);c.setBindGroup(0,gLight);c.dispatchWorkgroups(wg,wg,wg);c.end();
+  let p=e.beginRenderPass({colorAttachments:[{view:trcT.createView(),clearValue:[0,0,0,0],loadOp:'clear',storeOp:'store'}]});if(M===3&&S.NT){p.setPipeline(pTrc);p.setBindGroup(0,gTrc);p.draw(S.NT);}p.end();
+  p=e.beginRenderPass({colorAttachments:[{view:ctx.getCurrentTexture().createView(),clearValue:[0,0,0,1],loadOp:'clear',storeOp:'store'}]});p.setPipeline(pView);p.setBindGroup(0,gView);p.draw(3);p.end();
+  device.queue.submit([e.finish()]);
+}
+// ---------- Bedienung (Handy zuerst)
+const SC=[['tasse','Teetasse'],['kugel','Wasserkugel'],['mond','Mond → Planet'],['asteroid','Asteroid']];
+const ME=[[1,'Teilchen','M1'],[2,'Volumen','M2'],[3,'Marker','M3']];
+const PLANET=location.pathname.endsWith('euler.html')?'index.html':'planet.html';
+const goPlanet=(sc,m)=>{location.href=PLANET+'?scene='+sc+'&m='+m+'&tier='+tierKey;};
+const PAR=[
+ ['Milch-Schwere','buoy',0,.04,.001,'Auftrieb (Boussinesq): a = −β·c·ŷ. β = (ρ_Milch−ρ_Tee)/ρ·g. Höher → Milch sinkt schneller, mehr Rayleigh-Taylor-Beulen.'],
+ ['Wirbel','eps',0,1,.01,'Wirbelverstärkung (Fedkiw 2001): f = ε·(N×ω), N = ∇|ω|/|∇|ω||. Höher → mehr kleine Wirbel, zu hoch → Rauschen.'],
+ ['Strahl-Tempo','jV',.2,2,.05,'Einström-Geschwindigkeit v_j (Zellen/Schritt). Impuls ~ ρ·v_j²·A.'],
+ ['Strahl-Breite','jR',.6,4,.1,'Strahlradius R_j in Zellen. Volumenstrom Q = π·R_j²·v_j.'],
+ ['Teestärke','teaK',.1,3,.05,'Beer-Lambert: T = exp(−k·σ·s), s = Weg im Tee. Skaliert alle drei Farbkanäle.'],
+ ['Tee Rot','teaR',0,1,.01,'Absorption σ_R des Tees (rot). Klein = Tee lässt Rot durch → bernstein.'],
+ ['Tee Grün','teaG',.2,4,.05,'Absorption σ_G (grün). Bestimmt, wie orange/rot der Tee wirkt.'],
+ ['Tee Blau','teaB',.5,8,.1,'Absorption σ_B (blau). Hoch → Blau verschwindet, warmer Ton.'],
+ ['Milch-Dichte','milkK',.2,3,.05,'Streukoeffizient σ_s der Milch: dünne Milch durchscheinend, dicke deckend.'],
+ ['Milch R','mr',.5,1,.01,'Albedo der Milch (Rotanteil). Weißgrad der Wolken.'],
+ ['Milch G','mg',.5,1,.01,'Albedo Grün.'],['Milch B','mb',.4,1,.01,'Albedo Blau – kleiner = cremig-gelber.'],
+ ['Sonne','sunI',.2,5,.05,'Direktes Licht E_sun. Milchwolken: L = σ_s·albedo·(E·T_Licht·Φ + E_amb).'],
+ ['Umgebung','ambK',0,3,.05,'Himmels-/Raumlicht E_amb (Mehrfachstreuung in dicker Milch).'],
+ ['Belichtung','expo',.3,3,.05,'Kamera-Belichtung vor ACES-Tonemapping.'],
+ ['Raymarch-Schritt','step',.2,1.2,.02,'Schrittweite Δs (Zellen) beim Volumen-Rendern. Kleiner = schärfer, langsamer.'],
+ ['Druck-Iterationen','jac',8,80,1,'Jacobi-Schritte für ∇²p = ∇·v. Mehr = inkompressibler, langsamer.'],
+ ['Auflösung','rs',.3,1,.05,'Render-Skalierung (Anteil der Bildschirmpixel). Kleiner = schneller.']];
+function sliders(){const box=$('#sliders');box.innerHTML='';
+  for(const [lab,k,lo,hi,st,info] of PAR){const v=k==='rs'?T.rs:S[k];const d=document.createElement('div');d.className='sl';const id='s_'+k;const fmt=x=>(+x).toFixed(st>=1?0:st<.01?3:2);
+    d.innerHTML=`<label for="${id}">${lab}</label><input id="${id}" type="range" min="${lo}" max="${hi}" step="${st}" value="${v}"><output>${fmt(v)}</output><button class="ib" aria-label="Formel ${lab}">i</button>`;
+    const inp=d.querySelector('input'),out=d.querySelector('output');const pc=()=>inp.style.setProperty('--p',((inp.value-lo)/(hi-lo)*100)+'%');pc();
+    inp.oninput=()=>{const x=+inp.value;if(k==='rs'){T.rs=x;resize();}else S[k]=x;out.textContent=fmt(x);pc();};
+    d.querySelector('.ib').onclick=()=>{let n=d.nextElementSibling;if(n&&n.classList.contains('inf')){n.remove();return;}const f=document.createElement('div');f.className='inf';f.textContent=info;d.after(f);};
+    box.appendChild(d);}}
+function qual(){const q=$('#qual');q.innerHTML='';for(const [k,v] of Object.entries(TIERS)){const b=document.createElement('button');b.className=k===tierKey?'on':'';b.innerHTML=`${v.name}<small>${v.G}³</small>`;
+  b.onclick=()=>{try{localStorage.setItem('wkl.tier2',k)}catch(e){};const u=new URL(location.href);u.searchParams.set('tier',k);u.searchParams.set('scene',S.scene);u.searchParams.set('m',M);location.href=u.toString();};q.appendChild(b);}}
+function ui(){const sc=$('#scenes');sc.innerHTML='';for(const [k,l] of SC){const b=document.createElement('button');b.className='chip'+(k===S.scene?' on':'');b.textContent=l;
+    b.onclick=()=>{if(k==='mond'||k==='asteroid')goPlanet(k,M);else{setScene(k);S.teaK=1;ui();}};sc.appendChild(b);}
+  const me=$('#meth');me.innerHTML='';for(const [m,l,c] of ME){const b=document.createElement('button');b.className=m===M?'on':'';b.innerHTML=`${l}<small>${c}</small>`;
+    b.onclick=()=>{if(m===1){goPlanet(S.scene==='tasse'?'tasse':'milchtee',1);return;}M=m;ui();};me.appendChild(b);}
+  $('#go').textContent=S.scene==='tasse'?'Milch eingießen':'Milch einspritzen';sliders();qual();}
+$('#go').onclick=()=>{S.src=110;};$('#reset').onclick=()=>{setScene(S.scene);ui();};
+$('#pause').onclick=()=>{S.paused=!S.paused;$('#pause').textContent=S.paused?'▶':'❚❚';};
+$('#grab').onclick=()=>$('#sheet').classList.toggle('low');
+// Gesten: ein Finger dreht, zwei Finger zoomen
+const pts=new Map();let pinch=0,lastTap=0;
+canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);pts.set(e.pointerId,{x:e.clientX,y:e.clientY});});
+canvas.addEventListener('pointermove',e=>{const p=pts.get(e.pointerId);if(!p)return;const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
+  if(pts.size===2){const [a,b]=[...pts.values()];const d=Math.hypot(a.x-b.x,a.y-b.y);if(pinch)cam.dist=Math.max(G*.4,Math.min(G*3,cam.dist*pinch/d));pinch=d;return;}
+  cam.yaw-=dx*.006;cam.pitch=Math.max(-1.2,Math.min(1.2,cam.pitch+dy*.006));});
+const up=e=>{pts.delete(e.pointerId);if(pts.size<2)pinch=0;};canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);
+canvas.addEventListener('wheel',e=>{e.preventDefault();cam.dist=Math.max(G*.4,Math.min(G*3,cam.dist*Math.exp(e.deltaY*.001)));},{passive:false});
+setScene(S.scene);S.teaK=1;ui();
+if(TEST){window.__L={ready:true,S,cam,setScene,async run(n){for(let i=0;i<n;i++){frame();if(i%4===3)await device.queue.onSubmittedWorkDone();}await device.queue.onSubmittedWorkDone();return S.frame;},
+  async cap(){const pz=S.paused;S.paused=true;frame();S.paused=pz;const tex=ctx.getCurrentTexture(),w=tex.width,h=tex.height,bpr=Math.ceil(w*4/256)*256;const buf=device.createBuffer({size:bpr*h,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+    const e=device.createCommandEncoder();e.copyTextureToBuffer({texture:tex},{buffer:buf,bytesPerRow:bpr},[w,h]);device.queue.submit([e.finish()]);await buf.mapAsync(GPUMapMode.READ);const src=new Uint8Array(buf.getMappedRange());
+    const c2=document.createElement('canvas');c2.width=w;c2.height=h;const cx=c2.getContext('2d'),im=cx.createImageData(w,h);const bgr=tex.format.startsWith('bgra');
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*bpr+x*4,o=(y*w+x)*4;im.data[o]=src[i+(bgr?2:0)];im.data[o+1]=src[i+1];im.data[o+2]=src[i+(bgr?0:2)];im.data[o+3]=255;}
+    cx.putImageData(im,0,0);buf.unmap();return c2.toDataURL('image/jpeg',.92);},
+  async stat(){const bpr=G*8,rb=device.createBuffer({size:bpr*G*G,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});const e=device.createCommandEncoder();e.copyTextureToBuffer({texture:V0},{buffer:rb,bytesPerRow:bpr,rowsPerImage:G},[G,G,G]);device.queue.submit([e.finish()]);await rb.mapAsync(GPUMapMode.READ);
+    const h=new Uint16Array(rb.getMappedRange().slice(0));rb.unmap();rb.destroy();const hf=x=>{const s=x>>15,ex=(x>>10)&31,m=x&1023;return (s?-1:1)*(ex===0?m/1024*2**-14:2**(ex-15)*(1+m/1024));};
+    const Vv=(x,y,z,k)=>hf(h[((z*G+y)*G+x)*4+k]);let ws=0,wc=0,vs=0;for(let z=1;z<G-1;z++)for(let y=1;y<G-1;y++)for(let x=1;x<G-1;x++){const a=Vv(x,y,z,0),b=Vv(x,y,z,1),cc=Vv(x,y,z,2);if(a===0&&b===0&&cc===0)continue;
+      const wx=(Vv(x,y+1,z,2)-Vv(x,y-1,z,2)-Vv(x,y,z+1,1)+Vv(x,y,z-1,1))/2,wy=(Vv(x,y,z+1,0)-Vv(x,y,z-1,0)-Vv(x+1,y,z,2)+Vv(x-1,y,z,2))/2,wz=(Vv(x+1,y,z,1)-Vv(x-1,y,z,1)-Vv(x,y+1,z,0)+Vv(x,y-1,z,0))/2;ws+=Math.hypot(wx,wy,wz);vs+=Math.hypot(a,b,cc);wc++;}
+    return {t:S.frame,N:0,NT:S.NT,vort:+(ws/Math.max(wc,1)).toFixed(4),vmean:+(vs/Math.max(wc,1)).toFixed(3)};}};}
+else {let lt=performance.now(),fps=60,fc=0;const loop=t=>{frame();fps=fps*.93+1000/Math.max(1,t-lt)*.07;lt=t;if((fc++&15)===0){$('#fps').innerHTML=`<b>${Math.round(fps)}</b> fps`;$('#info').textContent=`Gitter ${G}³ · Farbe ${D}³${M===3?' · '+(S.NT/1e6).toFixed(2)+' Mio Marker':''}`;}requestAnimationFrame(loop);};requestAnimationFrame(loop);}
+</script>
+</body>
+</html>
